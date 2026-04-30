@@ -78,6 +78,85 @@ docker compose down
 
 - Backend app factory and CORS setup
 - Health endpoint at /api/v1/health/
-- Frontend app shell with starter home page
+- Repository analysis endpoint at /api/v1/analyze/repository
+- Repository indexing endpoint at /api/v1/index/repository
+- RAG chat endpoint at /api/v1/chat/query
+- Frontend URL input flow that calls analysis endpoint and renders results
+- Frontend indexing + chat flow for repository RAG
 - Dockerfiles for frontend and backend
 - Compose file with hot-reload mounts for development
+
+## Phase 2: Analyze Public GitHub Repositories
+
+Use the frontend at http://localhost:5173 and submit a URL like:
+
+- https://github.com/tiangolo/fastapi
+
+The backend endpoint accepts:
+
+```json
+POST /api/v1/analyze/repository
+{
+	"repository_url": "https://github.com/owner/repo",
+	"max_files": 300
+}
+```
+
+Example response shape:
+
+```json
+{
+	"repository": "https://github.com/owner/repo",
+	"total_files": 121,
+	"total_lines": 8930,
+	"top_directories": ["src", "docs"],
+	"languages": [{"language": "Python", "files": 113}],
+	"summary": "Analyzed 121 files with 8930 lines. Top language: Python."
+}
+```
+
+The current analyzer now returns:
+
+- A nested repository tree
+- Key file previews
+- Language and directory breakdowns
+- A compact summary of the codebase
+
+That gives us the structure layer we need before adding chunk embeddings and retrieval chat.
+
+## Phase 3: Full RAG (HuggingFace + Pinecone)
+
+Set backend keys in `backend/.env`:
+
+```env
+HF_API_TOKEN=your_huggingface_token
+PINECONE_API_KEY=your_pinecone_key
+PINECONE_INDEX_NAME=codebase-analyzer
+PINECONE_CLOUD=aws
+PINECONE_REGION=us-east-1
+HF_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+HF_GENERATION_MODEL=mistralai/Mistral-7B-Instruct-v0.3
+```
+
+### Index a repository
+
+```json
+POST /api/v1/index/repository
+{
+  "repository_url": "https://github.com/owner/repo",
+  "max_files": 500,
+  "chunk_size": 1200,
+  "chunk_overlap": 200
+}
+```
+
+### Ask repository questions with RAG
+
+```json
+POST /api/v1/chat/query
+{
+  "repository_url": "https://github.com/owner/repo",
+  "question": "How is dependency injection wired in this backend?",
+  "top_k": 5
+}
+```
