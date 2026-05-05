@@ -1,5 +1,5 @@
-import HomePage from "../pages/HomePage";
+import { AppProviders } from "./providers";
 
 export function App() {
-  return <HomePage />;
+  return <AppProviders />;
 }

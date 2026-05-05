@@ -1,6 +1,8 @@
-# CLAUDE.md — Full-Stack AI Application
+# AGENTS.md — Full-Stack AI Application
 
-You are an expert full-stack AI engineer. You build production-ready, performant, and accessible applications using **React**, **FastAPI**, **LangChain**, **HuggingFace embeddings**, and **Pinecone**. You follow strict architectural and engineering standards across every layer of the stack.
+You are an expert full-stack AI engineer. You build production-ready, performant, and accessible applications using **React**, **FastAPI**, **LangChain**, **HuggingFace embeddings + LLMs (free tier only)**, and **Pinecone**. You follow strict architectural and engineering standards across every layer of the stack.
+
+> **Cost policy:** This project uses **free-tier services only**. No OpenAI, no paid APIs. All AI/ML is powered by HuggingFace free models. Pinecone free tier is the only vector store.
 
 ---
 
@@ -342,10 +344,13 @@ apiClient.interceptors.response.use(
 | FastAPI | HTTP framework |
 | Pydantic v2 | Validation and settings |
 | LangChain | Orchestration (chains, retrievers) |
-| HuggingFace `sentence-transformers` | Embedding model |
-| Pinecone | Vector database |
+| HuggingFace `sentence-transformers` | Embedding model (free, local) |
+| HuggingFace `transformers` pipeline | LLM for chat/generation (free, local) |
+| Pinecone | Vector database (free tier) |
 | `httpx` | Async HTTP client |
 | `pytest` + `pytest-asyncio` | Testing |
+
+> ❌ **Never add OpenAI, Anthropic, Cohere, or any other paid LLM API.** All inference must run through HuggingFace free models.
 
 ### Architecture Rules
 
@@ -374,18 +379,21 @@ class Settings(BaseSettings):
     app_name: str = 'AI Search API'
     debug: bool = False
 
-    # Pinecone
+    # Pinecone (free tier)
     pinecone_api_key: str
     pinecone_index_name: str
     pinecone_environment: str
 
-    # HuggingFace
+    # HuggingFace — Embedding (free, runs locally via sentence-transformers)
+    # all-MiniLM-L6-v2: 384-dim, ~80MB, very fast on CPU — recommended default
     hf_embedding_model: str = 'sentence-transformers/all-MiniLM-L6-v2'
     hf_device: str = 'cpu'
 
-    # LangChain / OpenAI
-    openai_api_key: str | None = None
-    langchain_tracing_v2: bool = False
+    # HuggingFace — LLM for chat/generation (free, runs locally via transformers pipeline)
+    # flan-t5-base: instruction-tuned, ~250MB, fast on CPU — good free default
+    hf_llm_model: str = 'google/flan-t5-base'
+    hf_llm_max_new_tokens: int = 256
+    hf_llm_temperature: float = 0.7
 
 settings = Settings()
 ```
@@ -436,7 +444,9 @@ class RetrievalService:
         )
 ```
 
-### Embedding Service — HuggingFace
+### Embedding Service — HuggingFace (Free, Local)
+
+> **Model choice:** `sentence-transformers/all-MiniLM-L6-v2` is the recommended default — 384-dim vectors, ~80 MB, very fast on CPU, and completely free. It outperforms CodeBERT for general semantic search and requires no API key. Override via `HF_EMBEDDING_MODEL` in `.env` if needed (e.g. `sentence-transformers/all-mpnet-base-v2` for higher quality at the cost of speed).
 
 ```python
 # services/embedding.py
@@ -508,13 +518,36 @@ class PineconeRepository:
 
 ### LangChain Orchestration
 
+### LangChain Orchestration
+
 ```python
 # services/chat.py
+import asyncio
+from functools import lru_cache
 from langchain.chains import ConversationalRetrievalChain
 from langchain_community.vectorstores import Pinecone as LangchainPinecone
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_openai import ChatOpenAI
+from langchain_huggingface import HuggingFaceEmbeddings, HuggingFacePipeline
+from transformers import pipeline as hf_pipeline
 from app.core.config import settings
+
+
+@lru_cache(maxsize=1)
+def _build_llm() -> HuggingFacePipeline:
+    """
+    Free local LLM via HuggingFace transformers pipeline.
+    Default: google/flan-t5-base — instruction-tuned, ~250 MB, fast on CPU.
+    Override via HF_LLM_MODEL in .env (e.g. google/flan-t5-large for better quality).
+    ❌ Never swap this for ChatOpenAI or any paid API.
+    """
+    pipe = hf_pipeline(
+        'text2text-generation',
+        model=settings.hf_llm_model,
+        max_new_tokens=settings.hf_llm_max_new_tokens,
+        temperature=settings.hf_llm_temperature,
+        device=-1,  # CPU; set to 0 for GPU if available
+    )
+    return HuggingFacePipeline(pipeline=pipe)
+
 
 class ChatService:
     def __init__(self) -> None:
@@ -524,22 +557,29 @@ class ChatService:
             embedding=embeddings,
         )
         self._chain = ConversationalRetrievalChain.from_llm(
-            llm=ChatOpenAI(temperature=0),
+            llm=_build_llm(),
             retriever=vector_store.as_retriever(search_kwargs={'k': 4}),
             return_source_documents=True,
         )
 
     async def chat(self, question: str, history: list[tuple[str, str]]) -> dict:
-        return await self._chain.ainvoke({
-            'question': question,
-            'chat_history': history,
-        })
+        loop = asyncio.get_event_loop()
+        # HuggingFacePipeline is synchronous — run in thread pool
+        return await loop.run_in_executor(
+            None,
+            lambda: self._chain.invoke({
+                'question': question,
+                'chat_history': history,
+            }),
+        )
 ```
 
-- ✅ Always use `ainvoke` / `astream` — never sync `.invoke()` in async handlers.
 - ✅ Wrap chain construction in a service class — never inline in route handlers.
 - ✅ Inject services via FastAPI `Depends` — never instantiate inside handlers.
+- ✅ Run `HuggingFacePipeline` in `run_in_executor` — it is synchronous and blocks the event loop.
+- ✅ Cache the LLM singleton with `lru_cache` — model loading is expensive.
 - ❌ Never hardcode chain parameters — read from `settings`.
+- ❌ Never use `ChatOpenAI`, `langchain_openai`, or any paid LLM provider.
 
 ### Pydantic Models
 
@@ -687,12 +727,23 @@ VITE_API_BASE_URL=http://localhost:8000
 ### Backend (`.env`)
 
 ```env
+# Pinecone (free tier — https://app.pinecone.io)
 PINECONE_API_KEY=
 PINECONE_INDEX_NAME=
 PINECONE_ENVIRONMENT=
+
+# HuggingFace — Embedding model (free, runs locally)
+# Recommended: sentence-transformers/all-MiniLM-L6-v2 (384-dim, ~80MB, very fast on CPU)
 HF_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
 HF_DEVICE=cpu
-OPENAI_API_KEY=
+
+# HuggingFace — LLM for chat/generation (free, runs locally via transformers pipeline)
+# Recommended: google/flan-t5-base (~250MB, fast on CPU)
+# Upgrade option: google/flan-t5-large (~780MB, better quality, still free)
+HF_LLM_MODEL=google/flan-t5-base
+HF_LLM_MAX_NEW_TOKENS=256
+HF_LLM_TEMPERATURE=0.7
+
 DEBUG=false
 ```
 
@@ -724,7 +775,10 @@ DEBUG=false
 - [ ] No business logic in route handlers
 - [ ] Embedding runs in thread pool (`run_in_executor`)
 - [ ] Embedding model cached as singleton
-- [ ] LangChain chains use `ainvoke` / `astream`
+- [ ] HuggingFace LLM pipeline cached as singleton (`lru_cache`)
+- [ ] HuggingFace LLM pipeline runs in thread pool (`run_in_executor`)
+- [ ] No paid LLM API used (`ChatOpenAI`, `langchain_openai`, etc.)
+- [ ] LangChain chains use `ainvoke` / `astream` **or** sync chain wrapped in `run_in_executor`
 - [ ] All config via Pydantic `Settings` — no hardcoded values
 - [ ] FastAPI `Depends` used for all service injection
 - [ ] CORS configured correctly
@@ -744,8 +798,13 @@ DEBUG=false
 | Lazy-load all pages with `Suspense` | Eagerly import large page components |
 | Run embedding in `run_in_executor` | Call `model.encode()` on the event loop |
 | Cache the embedding model as a singleton | Reload the model per request |
-| Use `ainvoke` / `astream` for LangChain | Use sync `.invoke()` in async handlers |
-| Validate all config via Pydantic Settings | Hardcode API keys or model names |
+| Cache the HuggingFace LLM pipeline as a singleton | Reload the LLM per request |
+| Run `HuggingFacePipeline` in `run_in_executor` | Call the pipeline directly on the event loop |
+| Use free HuggingFace models only | Use OpenAI, Anthropic, Cohere, or any paid LLM |
+| Use Pinecone free tier | Add paid vector store tiers or alternatives |
+| Use `ainvoke` / `astream` for async-native chains | Use sync `.invoke()` in async handlers |
+| Wrap sync pipelines in `run_in_executor` | Block the event loop with synchronous inference |
+| Validate all config via Pydantic Settings | Hardcode model names or API keys |
 | Follow route → service → repository layers | Put logic in route handlers |
 | Inject services via `Depends` | Instantiate services inside route handlers |
 | Read existing files before modifying | Overwrite files without inspecting first |
