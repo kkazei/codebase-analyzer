@@ -39,3 +39,18 @@ body {
   margin: 0;
   background: var(--bg);
 }
+
+.progress-bar {
+  height: 6px;
+  width: 100%;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  width: var(--progress, 0%);
+  background: linear-gradient(90deg, var(--accent), var(--accent-strong));
+  transition: width 0.3s ease;
+}

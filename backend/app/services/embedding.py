@@ -9,9 +9,14 @@ from app.core.config import get_settings
 class EmbeddingService:
     def __init__(self) -> None:
         settings = get_settings()
+        model_kwargs = {}
+        if settings.hf_api_token:
+            model_kwargs["token"] = settings.hf_api_token
+
         self._model = SentenceTransformer(
             settings.hf_embedding_model,
             device=settings.hf_device,
+            **model_kwargs,
         )
 
     async def embed(self, text: str) -> list[float]:

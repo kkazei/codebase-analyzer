@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     pinecone_index_name: str
     pinecone_cloud: str = "aws"
     pinecone_region: str = "us-east-1"
+    pinecone_max_request_bytes: int = 1_900_000
 
     hf_api_token: str | None = None
     hf_embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
@@ -28,7 +29,8 @@ class Settings(BaseSettings):
     ingest_max_repo_mb: int = 200
     ingest_chunk_size: int = 1000
     ingest_chunk_overlap: int = 200
-    ingest_batch_size: int = 64
+    ingest_batch_size: int = 16
+    ingest_embed_timeout_sec: int = 120
     ingest_ignored_dirs: tuple[str, ...] = (
         "node_modules",
         "dist",

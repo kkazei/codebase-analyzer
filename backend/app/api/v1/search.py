@@ -7,7 +7,7 @@ from app.services.retrieval import RetrievalService
 router = APIRouter(prefix="/search", tags=["search"])
 
 
-@router.post("/", response_model=SearchResponse)
+@router.post("", response_model=SearchResponse)
 async def search(
     payload: SearchRequest,
     service: RetrievalService = Depends(get_retrieval_service),
