@@ -24,6 +24,7 @@ class ChatService:
 
         embeddings = HuggingFaceEmbeddings(
             model_name=settings.hf_embedding_model,
+            model_kwargs={"device": settings.hf_device},
         )
 
         client = Pinecone(api_key=settings.pinecone_api_key)
