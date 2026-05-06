@@ -64,6 +64,34 @@ class PineconeRepository:
                 lambda payload=batch: self._index.upsert(vectors=payload),
             )
 
+    async def count_by_filter(self, filter: dict[str, Any]) -> int:
+        loop = asyncio.get_event_loop()
+        try:
+            response = await loop.run_in_executor(
+                None,
+                lambda: self._index.describe_index_stats(filter=filter),
+            )
+        except Exception as exc:
+            message = str(exc)
+            if "do not support describing index stats with metadata filtering" in message:
+                return -1
+            raise
+
+        total = getattr(response, "total_vector_count", None)
+        if total is None and isinstance(response, dict):
+            total = response.get("total_vector_count")
+
+        if total is not None:
+            return int(total)
+
+        namespaces = getattr(response, "namespaces", None)
+        if namespaces is None and isinstance(response, dict):
+            namespaces = response.get("namespaces")
+        if isinstance(namespaces, dict):
+            return int(sum(item.get("vector_count", 0) for item in namespaces.values()))
+
+        return 0
+
 
 def _chunk_vectors_by_size(
     vectors: Iterable[dict[str, Any]],

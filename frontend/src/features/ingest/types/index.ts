@@ -23,6 +23,7 @@ export interface IngestResponse {
   branch: string;
   files_indexed: number;
   chunks_indexed: number;
+  reused: boolean;
   warnings: string[];
   top_level_entries: string[];
   sample_files: string[];

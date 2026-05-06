@@ -12,6 +12,7 @@ class IngestResponse(BaseModel):
     branch: str
     files_indexed: int
     chunks_indexed: int
+    reused: bool = False
     warnings: list[str] = Field(default_factory=list)
     top_level_entries: list[str] = Field(default_factory=list)
     sample_files: list[str] = Field(default_factory=list)

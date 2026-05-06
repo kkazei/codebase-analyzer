@@ -9,6 +9,7 @@ class ChatTurn(BaseModel):
 class ChatRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=4000)
     history: list[ChatTurn] = Field(default_factory=list)
+    filter: dict | None = None
 
 
 class ChatResponse(BaseModel):

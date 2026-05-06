@@ -86,6 +86,45 @@ class IngestionService:
         if not branch:
             raise ValueError("Unable to resolve repository branch.")
 
+        repo_key = f"{owner}/{repo_name}"
+        job_id = payload.job_id or str(uuid.uuid4())
+        reuse_filter = {
+            "repo": repo_key,
+            "repo_url": payload.repo_url,
+            "branch": branch,
+        }
+        existing_count = await self._repo.count_by_filter(reuse_filter)
+        if existing_count == -1:
+            probe_vector = await self._embedder.embed("reuse-check")
+            matches = await self._repo.query(
+                probe_vector,
+                top_k=1,
+                filter=reuse_filter,
+            )
+            if not matches:
+                matches = await self._repo.query(
+                    probe_vector,
+                    top_k=1,
+                    filter={"repo_url": payload.repo_url},
+                )
+            existing_count = 1 if matches else 0
+        elif existing_count == 0:
+            existing_count = await self._repo.count_by_filter({"repo_url": payload.repo_url})
+        if existing_count > 0:
+            progress_store.start(job_id=job_id, files_total=0)
+            progress_store.finish(job_id=job_id, files_processed=0, chunks_indexed=existing_count)
+            return IngestResponse(
+                repo=repo_key,
+                branch=branch,
+                files_indexed=0,
+                chunks_indexed=existing_count,
+                reused=True,
+                warnings=["Existing index found. Reusing stored vectors."],
+                top_level_entries=[],
+                sample_files=[],
+                job_id=job_id,
+            )
+
         max_bytes = settings.ingest_max_repo_mb * 1024 * 1024
         zip_path = await download_repo_zip(
             owner=owner,
@@ -102,7 +141,6 @@ class IngestionService:
 
         root_dir = next(extract_dir.iterdir())
         file_list = list(_iter_files(root_dir, settings.ingest_ignored_dirs))
-        job_id = payload.job_id or str(uuid.uuid4())
         progress_store.start(job_id=job_id, files_total=len(file_list))
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=settings.ingest_chunk_size,
@@ -143,8 +181,9 @@ class IngestionService:
                                 "id": str(uuid.uuid4()),
                                 "values": None,
                                 "metadata": {
-                                    "repo": f"{owner}/{repo_name}",
+                                    "repo": repo_key,
                                     "repo_url": payload.repo_url,
+                                    "branch": branch,
                                     "path": relative_path,
                                     "chunk_index": index,
                                     "title": relative_path,
@@ -182,10 +221,11 @@ class IngestionService:
                 warnings.append("No indexable text files found.")
 
             return IngestResponse(
-                repo=f"{owner}/{repo_name}",
+                repo=repo_key,
                 branch=branch,
                 files_indexed=files_indexed,
                 chunks_indexed=chunks_indexed,
+                reused=False,
                 warnings=warnings,
                 top_level_entries=sorted(top_level_entries),
                 sample_files=sample_files,

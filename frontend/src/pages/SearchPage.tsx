@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 
 import type { ChatTurn } from "@/features/chat";
 import { useChat } from "@/features/chat";
@@ -116,10 +116,24 @@ export default function SearchPage() {
   const [autoIndexKey, setAutoIndexKey] = useState<string | null>(null);
   const [progressPercent, setProgressPercent] = useState(0);
   const [progressLabel, setProgressLabel] = useState("");
-  const { data, isLoading, error } = useSearch(submittedQuery);
+  const [isChatOpen, setIsChatOpen] = useState(false);
   const analyzeMutation = useAnalyzeRepo();
   const ingestMutation = useIngest();
   const chatMutation = useChat();
+  const trimmedRepo = repoUrl.trim();
+  const trimmedBranch = branch.trim();
+  const currentKey = `${trimmedRepo}::${trimmedBranch}`;
+  const analysisReady = analyzeMutation.isSuccess && analyzedKey === currentKey;
+  const scopedFilter = useMemo(() => {
+    if (!analysisReady || !trimmedRepo) {
+      return null;
+    }
+
+    return {
+      repo_url: trimmedRepo,
+    };
+  }, [analysisReady, trimmedBranch, trimmedRepo]);
+  const { data, isLoading, error } = useSearch(submittedQuery, 5, scopedFilter);
   const errorMessage = error
     ? error instanceof Error
       ? error.message
@@ -133,6 +147,9 @@ export default function SearchPage() {
 
     if (ingestMutation.isSuccess) {
       const payload = ingestMutation.data;
+      if (payload.reused) {
+        return `Using existing index (${payload.chunks_indexed} chunks).`;
+      }
       return `Indexed ${payload.files_indexed} files (${payload.chunks_indexed} chunks).`;
     }
 
@@ -173,10 +190,6 @@ export default function SearchPage() {
     return null;
   }, [chatMutation.isError, chatMutation.isPending]);
 
-  const currentKey = `${repoUrl.trim()}::${branch.trim()}`;
-  const analysisReady = analyzeMutation.isSuccess && analyzedKey === currentKey;
-  const trimmedRepo = repoUrl.trim();
-  const trimmedBranch = branch.trim();
   const repoLabel =
     analyzeMutation.data?.repo ?? ingestMutation.data?.repo ?? "No repo selected";
   const branchLabel =
@@ -185,6 +198,7 @@ export default function SearchPage() {
   const chunkCount = ingestMutation.data?.chunks_indexed ?? 0;
   const indexedFiles = ingestMutation.data?.files_indexed ?? 0;
   const structureTree = buildFileTree(analyzeMutation.data?.file_paths ?? []);
+  const chatReady = ingestMutation.isSuccess;
 
   const runAnalyze = (nextRepo?: string, nextBranch?: string) => {
     const repoValue = (nextRepo ?? repoUrl).trim();
@@ -205,6 +219,41 @@ export default function SearchPage() {
         },
       }
     );
+  };
+
+  const runIngest = (nextRepo?: string, nextBranch?: string) => {
+    const repoValue = (nextRepo ?? repoUrl).trim();
+    const branchValue = (nextBranch ?? branch).trim();
+    if (!repoValue || ingestMutation.isPending) {
+      return;
+    }
+
+    const nextJobId = crypto.randomUUID();
+    setIngestJobId(nextJobId);
+    setAutoIndexKey(`${repoValue}::${branchValue}`);
+    setProgressPercent(0);
+    setProgressLabel("Starting index...");
+    ingestMutation.mutate({
+      repo_url: repoValue,
+      branch: branchValue || undefined,
+      job_id: nextJobId,
+    });
+  };
+
+  const resetRepoSession = () => {
+    setRepoUrl("");
+    setBranch("");
+    setAnalyzedKey(null);
+    setIngestJobId(null);
+    setAutoIndexKey(null);
+    setProgressPercent(0);
+    setProgressLabel("");
+    setQuery("");
+    setSubmittedQuery("");
+    setTurns([]);
+    setQuestion("");
+    analyzeMutation.reset();
+    ingestMutation.reset();
   };
 
   useEffect(() => {
@@ -276,68 +325,93 @@ export default function SearchPage() {
     );
   }, [ingestMutation.error, ingestMutation.isError]);
 
+  const submitQuestion = (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed || chatMutation.isPending) {
+      return;
+    }
+
+    chatMutation.mutate(
+      {
+        question: trimmed,
+        history: turns,
+        filter: scopedFilter,
+      },
+      {
+        onSuccess: (response) => {
+          setTurns((current) => [
+            ...current,
+            { user: trimmed, assistant: response.answer },
+          ]);
+        },
+      }
+    );
+
+    setQuestion("");
+  };
+
   return (
     <section className="relative overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-8 shadow-[0_20px_60px_-40px_var(--shadow)]">
-      <div className="absolute inset-x-0 top-0 h-40 bg-[radial-gradient(circle_at_top,_var(--surface-strong),_transparent_70%)] opacity-70" />
-      <div className="relative flex flex-col gap-6">
-        <header className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-3 text-xs uppercase tracking-[0.3em] text-[var(--text-muted)]">
-            <span className="rounded-full border border-[var(--border)] px-3 py-1">{repoLabel}</span>
-            <span className="rounded-full border border-[var(--border)] px-3 py-1">{fileCount} files</span>
-            <span className="rounded-full border border-[var(--border)] px-3 py-1">{chunkCount} chunks</span>
-            <span className="rounded-full border border-[var(--border)] px-3 py-1">branch {branchLabel}</span>
-            <button
-              type="button"
-              onClick={() => {
-                setRepoUrl("");
-                setBranch("");
-                setAnalyzedKey(null);
-                setIngestJobId(null);
-                setAutoIndexKey(null);
-                setProgressPercent(0);
-                setProgressLabel("");
-                analyzeMutation.reset();
-                ingestMutation.reset();
-              }}
-              className="rounded-full border border-[var(--border)] px-3 py-1 text-[10px] font-semibold text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text-strong)]"
-            >
-              Change repo
-            </button>
-          </div>
-          {ingestJobId ? (
-            <div className="grid gap-2">
-              <div
-                className="progress-bar"
-                style={{ "--progress": `${progressPercent}%` } as React.CSSProperties}
-              >
-                <div className="progress-bar-fill" />
-              </div>
-              <p className="text-xs uppercase tracking-[0.3em] text-[var(--text-muted)]">
-                {progressLabel || "Preparing index"}
-              </p>
+      <div className="absolute inset-x-0 top-0 h-56 bg-[radial-gradient(circle_at_top,_var(--accent-soft),_transparent_70%)] opacity-70" />
+      <div className="absolute -right-16 top-16 hidden h-48 w-48 rounded-full bg-[var(--accent-soft)] blur-[80px] lg:block" />
+      <div className="relative flex flex-col gap-8">
+        <header className="flex flex-col gap-4 animate-fade-up">
+          {analysisReady ? (
+            <div className="flex flex-wrap items-center gap-3 text-xs uppercase tracking-[0.3em] text-[var(--text-muted)]">
+              <span className="rounded-full border border-[var(--border)] px-3 py-1">{repoLabel}</span>
+              <span className="rounded-full border border-[var(--border)] px-3 py-1">{fileCount} files</span>
+              <span className="rounded-full border border-[var(--border)] px-3 py-1">{chunkCount} chunks</span>
+              <span className="rounded-full border border-[var(--border)] px-3 py-1">branch {branchLabel}</span>
             </div>
           ) : null}
-          <div className="flex flex-col gap-2">
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-[var(--accent)]">
-              Analyze repository
-            </p>
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--surface-strong)] shadow-[0_16px_30px_-20px_var(--shadow)] float-slow">
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 48 48"
+                  className="h-6 w-6 text-[var(--accent)]"
+                  fill="none"
+                >
+                  <path
+                    d="M8 26C8 16.059 16.059 8 26 8C35.941 8 44 16.059 44 26"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M26 8L32 14"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                  />
+                  <circle cx="20" cy="28" r="9" stroke="currentColor" strokeWidth="3" />
+                </svg>
+              </div>
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-[var(--accent)]">
+                Analyze repository
+              </p>
+            </div>
             <h1 className="text-3xl font-semibold text-[var(--text-strong)]">
-              Summarize, explore structure, and index automatically.
+              Paste a GitHub repo to summarize and map structure.
             </h1>
+            <p className="max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
+              After analysis completes, you will see the summary, structure, and search tools.
+            </p>
           </div>
         </header>
 
         <form
-          className="grid gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface-strong)] p-5"
+          className="grid gap-4 rounded-3xl border border-[var(--border)] bg-[var(--surface-strong)] p-6 animate-fade-up"
           onSubmit={(event) => event.preventDefault()}
         >
-          <div className="flex flex-col gap-3">
-            <label
-              htmlFor="repo-url"
-              className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--text-muted)]"
-            >
-              Repository URL
-            </label>
+          <label
+            htmlFor="repo-url"
+            className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--text-muted)]"
+          >
+            Repository URL
+          </label>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
             <input
               id="repo-url"
               type="url"
@@ -349,11 +423,23 @@ export default function SearchPage() {
                 const input = event.currentTarget;
                 setTimeout(() => runAnalyze(input.value, branch), 0);
               }}
-              className="h-12 w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 text-sm text-[var(--text-strong)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+              disabled={analysisReady}
+              className={`h-14 w-full flex-1 rounded-2xl border px-4 text-base text-[var(--text-strong)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${
+                analysisReady
+                  ? "border-[var(--border)]/60 bg-[var(--surface-strong)]/70 text-[var(--text-muted)]"
+                  : "border-[var(--border)] bg-[var(--surface)]"
+              }`}
             />
+            <button
+              type="button"
+              onClick={resetRepoSession}
+              className="rounded-full border border-[var(--border)] px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.3em] text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text-strong)]"
+            >
+              Change repo
+            </button>
           </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="flex-1">
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+            <div className="flex flex-col gap-3">
               <label
                 htmlFor="repo-branch"
                 className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--text-muted)]"
@@ -367,13 +453,39 @@ export default function SearchPage() {
                 value={branch}
                 onChange={(event) => setBranch(event.target.value)}
                 onBlur={() => runAnalyze()}
-                className="mt-3 h-12 w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 text-sm text-[var(--text-strong)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                className="h-12 w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 text-sm text-[var(--text-strong)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
               />
             </div>
+            <button
+              type="button"
+              onClick={() => runAnalyze()}
+              disabled={!repoUrl.trim() || analyzeMutation.isPending}
+              className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-xs font-semibold uppercase tracking-[0.3em] text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Reanalyze
+            </button>
+            <button
+              type="button"
+              onClick={() => runIngest()}
+              disabled={!repoUrl.trim() || ingestMutation.isPending}
+              className="rounded-2xl bg-[var(--accent)] px-4 py-3 text-xs font-semibold uppercase tracking-[0.3em] text-white shadow-[0_18px_40px_-20px_var(--accent-strong)] transition hover:translate-y-[-1px] hover:shadow-[0_24px_44px_-18px_var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Reindex
+            </button>
           </div>
-          <p className="text-xs uppercase tracking-[0.3em] text-[var(--text-muted)]">
-            Public GitHub repos only. Auto analyze + auto index enabled.
-          </p>
+          {ingestJobId ? (
+            <div className="grid gap-2">
+              <div
+                className="progress-bar"
+                style={{ "--progress": `${progressPercent}%` } as CSSProperties}
+              >
+                <div className="progress-bar-fill" />
+              </div>
+              <p className="text-xs uppercase tracking-[0.3em] text-[var(--text-muted)]">
+                {progressLabel || "Preparing index"}
+              </p>
+            </div>
+          ) : null}
           {ingestStatus ? (
             <p className="text-xs uppercase tracking-[0.3em] text-[var(--text-muted)]">
               {ingestStatus}
@@ -386,8 +498,8 @@ export default function SearchPage() {
           ) : null}
         </form>
 
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="flex flex-col gap-6">
+        {analysisReady ? (
+          <div className="grid gap-8 animate-fade-up">
             <div className="flex items-center gap-3">
               {([
                 { id: "summary", label: "Summary" },
@@ -416,7 +528,7 @@ export default function SearchPage() {
                   </p>
                   <p className="text-sm leading-6 text-[var(--text-muted)]">
                     This repository contains {fileCount.toLocaleString()} files
-                    across {analysisReady ? formatBytes(analyzeMutation.data.total_bytes) : "-"}.
+                    across {formatBytes(analyzeMutation.data.total_bytes)}.
                     Use indexing when you want semantic search and chat responses.
                   </p>
                 </div>
@@ -426,7 +538,7 @@ export default function SearchPage() {
                     Key capabilities
                   </p>
                   <ul className="grid gap-2 text-sm text-[var(--text-strong)]">
-                    <li>Top-level entries: {analysisReady ? analyzeMutation.data.top_level_entries.join(", ") : "-"}</li>
+                    <li>Top-level entries: {analyzeMutation.data.top_level_entries.join(", ")}</li>
                     <li>Indexed files: {indexedFiles.toLocaleString()}</li>
                     <li>Indexed chunks: {chunkCount.toLocaleString()}</li>
                   </ul>
@@ -455,7 +567,7 @@ export default function SearchPage() {
                     Structure
                   </p>
                   <span className="rounded-full border border-[var(--border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--text-muted)]">
-                    {analysisReady ? "Analyzed" : "Pending"}
+                    Analyzed
                   </span>
                 </div>
                 {structureTree.length > 0 ? (
@@ -470,133 +582,162 @@ export default function SearchPage() {
               </div>
             )}
           </div>
+        ) : (
+          <div className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-6 text-sm text-[var(--text-muted)]">
+            Paste a GitHub repository URL to begin analysis. Summary, structure, and search results appear after analysis completes.
+          </div>
+        )}
+      </div>
 
-          <aside className="lg:sticky lg:top-6">
-            <section className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[0_20px_50px_-35px_var(--shadow)]">
-              <div className="flex items-center justify-between">
+      <div className="fixed bottom-6 left-4 right-4 z-40 sm:left-auto sm:right-6 sm:w-[420px]">
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => setIsChatOpen((current) => !current)}
+            className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-5 py-3 text-xs font-semibold uppercase tracking-[0.3em] text-[var(--text-strong)] shadow-[0_18px_40px_-20px_var(--shadow)] transition hover:border-[var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)]"
+          >
+            {isChatOpen ? "Close chat" : "Ask CodeLens"}
+          </button>
+        </div>
+
+        {isChatOpen ? (
+          <section className="mt-3 flex max-h-[75vh] min-h-[420px] flex-col gap-4 overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[0_20px_50px_-35px_var(--shadow)] animate-fade-up">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--surface-strong)]">
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 48 48"
+                    className="h-5 w-5 text-[var(--accent)]"
+                    fill="none"
+                  >
+                    <rect x="10" y="12" width="28" height="22" rx="6" stroke="currentColor" strokeWidth="2.5" />
+                    <path d="M16 20H32" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    <path d="M16 26H26" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                </div>
                 <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--text-muted)]">
-                  Ask Codebase
+                  Ask CodeLens
                 </p>
-                <span className="rounded-full border border-[var(--border)] px-2 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--text-muted)]">
-                  Ready
-                </span>
               </div>
-              <div className="mt-4 grid gap-4">
-                <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-strong)] p-4 text-sm text-[var(--text-muted)]">
+              <span className="rounded-full border border-[var(--border)] px-2 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--text-muted)]">
+                {chatReady ? "Ready" : "Indexing"}
+              </span>
+            </div>
+
+            {turns.length === 0 ? (
+              <div className="grid gap-3">
+                <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-strong)] p-3 text-xs text-[var(--text-muted)]">
                   Ask anything about this codebase. Responses are grounded in indexed files.
                 </div>
 
-                <div className="grid gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setQuestion("What is this project for and how do I run it?")}
-                    className="rounded-2xl border border-[var(--border)] bg-[var(--surface-strong)] px-4 py-3 text-left text-xs text-[var(--text-strong)]"
-                  >
-                    What is this project for and how do I run it?
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setQuestion("Walk me through the entry point of the app.")}
-                    className="rounded-2xl border border-[var(--border)] bg-[var(--surface-strong)] px-4 py-3 text-left text-xs text-[var(--text-strong)]"
-                  >
-                    Walk me through the entry point of the app.
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setQuestion("Where are the API routes defined?")}
-                    className="rounded-2xl border border-[var(--border)] bg-[var(--surface-strong)] px-4 py-3 text-left text-xs text-[var(--text-strong)]"
-                  >
-                    Where are the API routes defined?
-                  </button>
+                <div className="grid gap-2">
+                  {[
+                    "What is this project for and how do I run it?",
+                    "Walk me through the entry point of the app.",
+                    "Where are the API routes defined?",
+                  ].map((prompt) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      onClick={() => submitQuestion(prompt)}
+                      disabled={!chatReady || chatMutation.isPending}
+                      className="rounded-2xl border border-[var(--border)] bg-[var(--surface-strong)] px-4 py-2 text-left text-xs text-[var(--text-strong)] transition disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {prompt}
+                    </button>
+                  ))}
                 </div>
               </div>
+            ) : null}
 
-              <form
-                className="mt-4 grid gap-3"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  const trimmed = question.trim();
-                  if (!trimmed || chatMutation.isPending) {
-                    return;
-                  }
-
-                  chatMutation.mutate(
-                    {
-                      question: trimmed,
-                      history: turns,
-                    },
-                    {
-                      onSuccess: (response) => {
-                        setTurns((current) => [
-                          ...current,
-                          { user: trimmed, assistant: response.answer },
-                        ]);
-                      },
-                    }
-                  );
-
-                  setQuestion("");
-                }}
-              >
-                <label
-                  htmlFor="chat-input"
-                  className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--text-muted)]"
-                >
-                  Ask a question
-                </label>
-                <textarea
-                  id="chat-input"
-                  rows={3}
-                  placeholder="Ask about architecture, ownership, or impact"
-                  value={question}
-                  onChange={(event) => setQuestion(event.target.value)}
-                  className="min-h-[96px] w-full resize-none rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--text-strong)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-                />
-                <button
-                  type="submit"
-                  disabled={chatMutation.isPending}
-                  className="rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white shadow-[0_18px_40px_-20px_var(--accent-strong)] transition hover:translate-y-[-1px] hover:shadow-[0_24px_44px_-18px_var(--accent-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)]"
-                >
-                  {chatMutation.isPending ? "Sending" : "Send"}
-                </button>
-                {chatStatus ? (
-                  <p className="text-xs uppercase tracking-[0.3em] text-[var(--text-muted)]">
-                    {chatStatus}
-                  </p>
-                ) : null}
-              </form>
-
-              <div className="mt-4 grid gap-3">
-                {turns.length === 0 ? (
-                  <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-strong)] p-4 text-xs text-[var(--text-muted)]">
-                    Start a conversation after indexing a repository.
-                  </div>
-                ) : (
-                  turns.map((turn, index) => (
-                    <div key={`${turn.user}-${index}`} className="grid gap-2">
-                      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-strong)] p-3 text-xs text-[var(--text-strong)]">
-                        <p className="text-[10px] uppercase tracking-[0.3em] text-[var(--text-muted)]">
+            <div className="flex-1 overflow-auto rounded-2xl border border-[var(--border)] bg-[var(--surface-strong)] p-4">
+              {turns.length === 0 ? (
+                <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 text-xs text-[var(--text-muted)]">
+                  Start a conversation after indexing a repository.
+                </div>
+              ) : (
+                <div className="grid gap-4">
+                  {turns.map((turn, index) => (
+                    <div key={`${turn.user}-${index}`} className="grid gap-3">
+                      <div className="flex items-start justify-end gap-2">
+                        <div className="max-w-[85%] rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm text-white shadow-[0_12px_30px_-20px_var(--shadow)] chat-pop">
+                          <p className="break-words whitespace-pre-wrap">{turn.user}</p>
+                        </div>
+                        <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--surface)] text-xs text-[var(--text-muted)]">
                           You
-                        </p>
-                        <p className="mt-2 text-sm text-[var(--text-strong)]">
-                          {turn.user}
-                        </p>
+                        </div>
                       </div>
-                      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-3 text-xs text-[var(--text-strong)]">
-                        <p className="text-[10px] uppercase tracking-[0.3em] text-[var(--text-muted)]">
-                          Assistant
-                        </p>
-                        <p className="mt-2 text-sm text-[var(--text-strong)]">
-                          {turn.assistant}
-                        </p>
+                      <div className="flex items-start gap-2">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
+                          <svg
+                            aria-hidden="true"
+                            viewBox="0 0 48 48"
+                            className="h-5 w-5 text-[var(--accent)]"
+                            fill="none"
+                          >
+                            <rect x="10" y="12" width="28" height="22" rx="6" stroke="currentColor" strokeWidth="2.5" />
+                            <path d="M18 19H30" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                            <path d="M18 25H26" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                          </svg>
+                        </div>
+                        <div className="max-w-[85%] rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--text-strong)] shadow-[0_12px_30px_-20px_var(--shadow)] chat-pop">
+                          <p className="break-words whitespace-pre-wrap">{turn.assistant}</p>
+                        </div>
                       </div>
                     </div>
-                  ))
-                )}
-              </div>
-            </section>
-          </aside>
-        </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <form
+              className="grid gap-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                submitQuestion(question);
+              }}
+            >
+              <label
+                htmlFor="chat-input"
+                className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--text-muted)]"
+              >
+                Ask a question
+              </label>
+              <textarea
+                id="chat-input"
+                rows={3}
+                placeholder={
+                  chatReady
+                    ? "Ask about architecture, ownership, or impact"
+                    : "Chat unlocks after indexing"
+                }
+                value={question}
+                onChange={(event) => setQuestion(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    submitQuestion(question);
+                  }
+                }}
+                disabled={!chatReady}
+                className="min-h-[96px] w-full resize-none rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--text-strong)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-70"
+              />
+              <button
+                type="submit"
+                disabled={!chatReady || chatMutation.isPending}
+                className="rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white shadow-[0_18px_40px_-20px_var(--accent-strong)] transition hover:translate-y-[-1px] hover:shadow-[0_24px_44px_-18px_var(--accent-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)] disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {chatMutation.isPending ? "Sending" : "Send"}
+              </button>
+              {chatStatus ? (
+                <p className="text-xs uppercase tracking-[0.3em] text-[var(--text-muted)]">
+                  {chatStatus}
+                </p>
+              ) : null}
+            </form>
+          </section>
+        ) : null}
       </div>
     </section>
   );

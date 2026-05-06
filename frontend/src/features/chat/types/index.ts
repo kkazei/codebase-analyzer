@@ -6,6 +6,7 @@ export interface ChatTurn {
 export interface ChatRequest {
   question: string;
   history: ChatTurn[];
+  filter?: Record<string, unknown> | null;
 }
 
 export interface ChatResponse {

@@ -30,7 +30,7 @@ class ChatService:
         index = client.Index(settings.pinecone_index_name)
         vector_store = PineconeVectorStore(index=index, embedding=embeddings)
 
-        self._retriever = vector_store.as_retriever(search_kwargs={"k": 4})
+        self._vector_store = vector_store
         self._client = _build_client()
         self._model = settings.hf_generation_model
         self._max_new_tokens = settings.hf_generation_max_new_tokens
@@ -39,9 +39,14 @@ class ChatService:
     async def chat(self, payload: ChatRequest) -> ChatResponse:
         loop = asyncio.get_event_loop()
 
+        filter_payload = payload.filter or None
         documents = await loop.run_in_executor(
             None,
-            lambda: self._retriever.invoke(payload.question),
+            lambda: self._vector_store.similarity_search(
+                payload.question,
+                k=4,
+                filter=filter_payload,
+            ),
         )
 
         context = "\n\n".join(
