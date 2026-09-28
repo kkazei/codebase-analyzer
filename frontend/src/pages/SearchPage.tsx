@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement } from "react";
+import { flushSync } from "react-dom";
 
 import type { ChatTurn } from "@/features/chat";
 import { useChat } from "@/features/chat";
@@ -50,6 +51,23 @@ const sampleRepositories = [
   { owner: "fastapi", name: "fastapi", description: "Modern Python API framework" },
   { owner: "vitejs", name: "vite", description: "Frontend build tooling" },
 ];
+
+function transitionWorkspace(update: () => void): void {
+  const prefersReducedMotion =
+    typeof window !== "undefined" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  if (
+    typeof document === "undefined" ||
+    prefersReducedMotion ||
+    typeof document.startViewTransition !== "function"
+  ) {
+    update();
+    return;
+  }
+
+  document.startViewTransition(() => flushSync(update));
+}
 
 function getSourcePaths(sources: Record<string, unknown>[]): string[] {
   return [...new Set(sources
@@ -169,7 +187,6 @@ function TypingIndicator(): ReactElement {
 
 export default function SearchPage() {
   const [query, setQuery] = useState("");
-  const [submittedQuery, setSubmittedQuery] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
   const [branch, setBranch] = useState("");
   const [question, setQuestion] = useState("");
@@ -200,7 +217,14 @@ export default function SearchPage() {
       repo_url: trimmedRepo,
     };
   }, [analysisReady, trimmedBranch, trimmedRepo]);
-  const { data, isLoading, error } = useSearch(submittedQuery, 5, scopedFilter);
+  const {
+    data,
+    isLoading,
+    isFetching,
+    isDebouncing,
+    error,
+  } = useSearch(query, 5, scopedFilter);
+  const isSearchBusy = isLoading || isFetching || isDebouncing;
   const errorMessage = error
     ? error instanceof Error
       ? error.message
@@ -282,7 +306,7 @@ export default function SearchPage() {
       },
       {
         onSuccess: () => {
-          setAnalyzedKey(`${repoValue}::${branchValue}`);
+          transitionWorkspace(() => setAnalyzedKey(`${repoValue}::${branchValue}`));
         },
       }
     );
@@ -308,22 +332,23 @@ export default function SearchPage() {
   };
 
   const resetRepoSession = () => {
-    setRepoUrl("");
-    setBranch("");
-    setAnalyzedKey(null);
-    setIngestJobId(null);
-    setAutoIndexKey(null);
-    setProgressPercent(0);
-    setProgressLabel("");
-    setQuery("");
-    setSubmittedQuery("");
-    setActiveTab("summary");
-    setTurns([]);
-    setFailedQuestion(null);
-    setQuestion("");
-    analyzeMutation.reset();
-    ingestMutation.reset();
-    chatMutation.reset();
+    transitionWorkspace(() => {
+      setRepoUrl("");
+      setBranch("");
+      setAnalyzedKey(null);
+      setIngestJobId(null);
+      setAutoIndexKey(null);
+      setProgressPercent(0);
+      setProgressLabel("");
+      setQuery("");
+      setActiveTab("summary");
+      setTurns([]);
+      setFailedQuestion(null);
+      setQuestion("");
+      analyzeMutation.reset();
+      ingestMutation.reset();
+      chatMutation.reset();
+    });
   };
 
   useEffect(() => {
@@ -467,10 +492,13 @@ export default function SearchPage() {
         </p>
       </header>
 
-      <div className={`grid items-start gap-6 sm:gap-8 ${analysisReady ? "xl:grid-cols-[18rem_minmax(0,1fr)]" : "grid-cols-1"}`}>
+      <div
+        key={analysisReady ? "analyzed-workspace" : "repository-entry"}
+        className={`workspace-layout-enter grid items-start gap-6 sm:gap-8 ${analysisReady ? "xl:grid-cols-[18rem_minmax(0,1fr)]" : "grid-cols-1"}`}
+      >
         <aside
           aria-labelledby="repository-source-title"
-          className={`glass-surface grid gap-5 rounded-[1.75rem] border p-5 sm:p-6 ${analysisReady ? "" : "mx-auto w-full max-w-4xl"}`}
+          className={`glass-surface [view-transition-name:workspace-source] grid gap-5 rounded-[1.75rem] border p-5 sm:p-6 ${analysisReady ? "" : "mx-auto w-full max-w-4xl"}`}
         >
           <div>
             <h2 id="repository-source-title" className="text-base font-semibold text-[var(--text-strong)]">
@@ -617,18 +645,18 @@ export default function SearchPage() {
             </div>
           ) : null}
           {ingestStatus ? (
-            <p role={ingestMutation.isError ? "alert" : "status"} className={`text-sm leading-6 ${ingestMutation.isError ? "text-[var(--danger)]" : "text-[var(--text-muted)]"}`}>
+            <p key={ingestStatus} role={ingestMutation.isError ? "alert" : "status"} className={`panel-enter text-sm leading-6 ${ingestMutation.isError ? "text-[var(--danger)]" : "text-[var(--text-muted)]"}`}>
               {ingestStatus}
             </p>
           ) : null}
           {analyzeStatus ? (
-            <p role={analyzeMutation.isError ? "alert" : "status"} className={`text-sm leading-6 ${analyzeMutation.isError ? "text-[var(--danger)]" : "text-[var(--text-muted)]"}`}>
+            <p key={analyzeStatus} role={analyzeMutation.isError ? "alert" : "status"} className={`panel-enter text-sm leading-6 ${analyzeMutation.isError ? "text-[var(--danger)]" : "text-[var(--text-muted)]"}`}>
               {analyzeStatus}
             </p>
           ) : null}
         </aside>
 
-        <div className="min-w-0">
+        <div className="min-w-0 [view-transition-name:workspace-content]">
           {analysisReady ? (
             <div className="grid gap-5">
               <header className="flex min-w-0 flex-col gap-3 border-b border-[var(--border)] pb-5 sm:flex-row sm:items-end sm:justify-between">
@@ -659,13 +687,15 @@ export default function SearchPage() {
                     role="tab"
                     aria-selected={activeTab === tab.id}
                     aria-controls={`${tab.id}-panel`}
-                    onClick={() => setActiveTab(tab.id)}
+                    onClick={() => transitionWorkspace(() => setActiveTab(tab.id))}
                     onKeyDown={(event) => {
                       if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
                         event.preventDefault();
                         const nextTab = tab.id === "summary" ? "structure" : "summary";
-                        setActiveTab(nextTab);
-                        document.getElementById(`${nextTab}-tab`)?.focus();
+                        transitionWorkspace(() => {
+                          setActiveTab(nextTab);
+                          document.getElementById(`${nextTab}-tab`)?.focus();
+                        });
                       }
                     }}
                     className={`min-h-10 rounded-md px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${
@@ -730,9 +760,8 @@ export default function SearchPage() {
                     <SearchForm
                       value={query}
                       onChange={setQuery}
-                      onSubmit={() => setSubmittedQuery(query.trim())}
                       disabled={!chatReady}
-                      isLoading={isLoading}
+                      isLoading={isSearchBusy}
                     />
                     {!chatReady ? (
                       <p role="status" className="text-sm text-[var(--text-muted)]">
@@ -741,10 +770,10 @@ export default function SearchPage() {
                     ) : null}
                     {chatReady ? (
                       <SearchResults
-                        isLoading={isLoading}
+                        isLoading={isSearchBusy}
                         errorMessage={errorMessage}
                         results={data?.results ?? []}
-                        hasSearched={submittedQuery.length > 0}
+                        hasSearched={query.trim().length > 1}
                       />
                     ) : null}
                   </div>
@@ -864,7 +893,13 @@ export default function SearchPage() {
             className="chat-dock-content flex min-h-0 flex-col gap-4 overflow-hidden p-4"
           >
 
-            <div ref={conversationRef} className="min-h-0 flex-1 overflow-auto" aria-live="polite">
+            <div
+              ref={conversationRef}
+              tabIndex={0}
+              aria-label="Conversation messages"
+              aria-live="polite"
+              className="chat-conversation-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
+            >
               {turns.length === 0 && !chatMutation.isPending && !failedQuestion ? (
                 <div className="grid gap-4">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface-strong)] text-[var(--accent)]">

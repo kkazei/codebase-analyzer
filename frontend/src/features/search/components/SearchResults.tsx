@@ -15,7 +15,7 @@ export function SearchResults({
 }: SearchResultsProps) {
   if (isLoading) {
     return (
-      <div role="status" className="rounded-lg border border-[var(--border)] bg-[var(--surface-strong)] p-4 text-sm text-[var(--text)]">
+      <div role="status" className="panel-enter rounded-lg border border-[var(--border)] bg-[var(--surface-strong)] p-4 text-sm text-[var(--text)]">
         Searching indexed files…
       </div>
     );
@@ -23,7 +23,7 @@ export function SearchResults({
 
   if (errorMessage) {
     return (
-      <div role="alert" className="rounded-lg border border-[var(--danger)]/60 bg-[var(--surface-strong)] p-4 text-sm text-[var(--text-strong)]">
+      <div role="alert" className="panel-enter rounded-lg border border-[var(--danger)]/60 bg-[var(--surface-strong)] p-4 text-sm text-[var(--text-strong)]">
         {errorMessage}
       </div>
     );
@@ -31,7 +31,7 @@ export function SearchResults({
 
   if (!hasSearched) {
     return (
-      <div className="rounded-lg border border-dashed border-[var(--border)] px-4 py-5 text-sm text-[var(--text-muted)]">
+      <div className="panel-enter rounded-lg border border-dashed border-[var(--border)] px-4 py-5 text-sm text-[var(--text-muted)]">
         Enter a query to see matching files.
       </div>
     );
@@ -39,14 +39,14 @@ export function SearchResults({
 
   if (results.length === 0) {
     return (
-      <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-strong)] px-4 py-5 text-sm text-[var(--text)]">
+      <div className="panel-enter rounded-lg border border-[var(--border)] bg-[var(--surface-strong)] px-4 py-5 text-sm text-[var(--text)]">
         No code matched this search. Try a file name or describe the behavior you are looking for.
       </div>
     );
   }
 
   return (
-    <ol aria-label="Matching files" className="divide-y divide-[var(--border)] border-y border-[var(--border)]">
+    <ol aria-label="Matching files" className="panel-enter divide-y divide-[var(--border)] border-y border-[var(--border)]">
       {results.map((item) => (
         <li
           key={item.id}

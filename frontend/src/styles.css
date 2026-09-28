@@ -101,6 +101,19 @@ body {
   }
 }
 
+@keyframes workspace-view-enter {
+  from {
+    opacity: 0.72;
+    filter: blur(7px);
+    transform: scale(0.99);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1);
+  }
+}
+
 @keyframes message-enter {
   from {
     opacity: 0;
@@ -134,7 +147,11 @@ body {
 }
 
 .panel-enter {
-  animation: panel-enter 240ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation: panel-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.workspace-layout-enter {
+  animation: workspace-view-enter 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .message-enter {
@@ -155,6 +172,16 @@ body {
 
 .typing-dot:nth-child(3) {
   animation-delay: 240ms;
+}
+
+.chat-conversation-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  overscroll-behavior: contain;
+}
+
+.chat-conversation-scroll::-webkit-scrollbar {
+  display: none;
 }
 
 .chat-dock {
@@ -424,6 +451,26 @@ button,
 input,
 textarea {
   font: inherit;
+}
+
+button,
+a,
+input,
+textarea,
+[role="tab"] {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  transition-duration: 180ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+::view-transition-group(workspace-source),
+::view-transition-group(workspace-content) {
+  animation-duration: 620ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+::view-transition-new(workspace-content) {
+  animation: workspace-view-enter 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 button:not(:disabled),
