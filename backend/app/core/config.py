@@ -20,8 +20,8 @@ class Settings(BaseSettings):
     hf_embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     hf_embedding_dimension: int = 384
 
-    # When unset, Hugging Face InferenceClient selects its recommended chat model.
-    hf_generation_model: str | None = None
+    # Small chat model served by Nscale through Hugging Face Inference Providers.
+    hf_generation_model: str | None = "Qwen/Qwen3-4B-Instruct-2507:nscale"
     hf_generation_max_new_tokens: int = 256
     hf_generation_temperature: float = 0.7
 

@@ -129,10 +129,11 @@ class ChatService:
                     )
                     raise ChatInferenceError(
                         "HF_GENERATION_MODEL is unavailable to the enabled inference "
-                        "providers, and automatic model selection also failed. Clear "
-                        "HF_GENERATION_MODEL or set it to a chat model available to "
-                        "your Hugging Face token. Check the token's Inference Providers "
-                        "permission and available credits."
+                        "providers, and automatic model selection also failed. Enable "
+                        "the model's provider for your Hugging Face token or set "
+                        "HF_GENERATION_MODEL to a chat model served by an enabled "
+                        "provider. Check the token's Inference Providers permission "
+                        "and available credits."
                     ) from fallback_exc
             else:
                 logger.exception("Hugging Face chat inference failed")
