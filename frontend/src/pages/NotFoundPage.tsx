@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 
 export default function NotFoundPage() {
   return (
-    <section className="flex min-h-[320px] flex-col items-start justify-center gap-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-6 sm:p-8">
+    <section className="glass-surface flex min-h-[320px] flex-col items-start justify-center gap-4 rounded-2xl border p-6 sm:p-8">
       <p className="text-sm font-medium text-[var(--text-muted)]">
         404
       </p>

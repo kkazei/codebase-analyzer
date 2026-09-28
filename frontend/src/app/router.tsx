@@ -51,11 +51,11 @@ function RootLayout() {
   const nextThemeLabel = theme === "dark" ? "light" : "dark";
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
-      <header className="border-b border-[var(--border)] bg-[var(--surface)]">
-        <div className="mx-auto flex min-h-[72px] w-full max-w-7xl items-center justify-between gap-5 px-5 sm:px-7">
+    <div className="min-h-screen text-[var(--text)]">
+      <header className="sticky top-0 z-30 border-b border-[var(--border)] bg-[color-mix(in_srgb,var(--surface)_84%,transparent)] backdrop-blur-2xl">
+        <div className="mx-auto flex min-h-[76px] w-full max-w-[1440px] items-center justify-between gap-5 px-5 sm:px-7 lg:px-10">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface-strong)]">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-[var(--border)] bg-[linear-gradient(145deg,_color-mix(in_srgb,var(--accent)_18%,var(--surface-strong)),_var(--surface-strong))] shadow-[inset_0_1px_0_color-mix(in_srgb,white_12%,transparent)]">
               <svg
                 aria-hidden="true"
                 viewBox="0 0 48 48"
@@ -73,7 +73,7 @@ function RootLayout() {
               </svg>
             </div>
             <div>
-              <p className="text-sm font-semibold text-[var(--text-strong)]">
+              <p className="text-[15px] font-semibold tracking-[-0.02em] text-[var(--text-strong)]">
                 CodeLens
               </p>
               <p className="hidden text-xs text-[var(--text-muted)] sm:block">
@@ -136,10 +136,10 @@ function RootLayout() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-7xl px-5 pb-14 pt-8 sm:px-7 sm:pt-10">
+      <main className="mx-auto w-full max-w-[1440px] px-5 pb-16 pt-10 sm:px-7 sm:pt-12 lg:px-10 lg:pt-14">
         <Suspense
           fallback={
-            <div role="status" className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-6 text-sm text-[var(--text-muted)]">
+            <div role="status" className="glass-surface rounded-2xl border p-6 text-sm text-[var(--text-muted)]">
               Opening the repository workspace…
             </div>
           }
@@ -149,7 +149,7 @@ function RootLayout() {
       </main>
 
       <footer className="border-t border-[var(--border)]">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-2 px-5 py-5 text-xs text-[var(--text-muted)] sm:flex-row sm:items-center sm:justify-between sm:px-7">
+        <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-2 px-5 py-5 text-xs text-[var(--text-muted)] sm:flex-row sm:items-center sm:justify-between sm:px-7 lg:px-10">
           <span>CodeLens repository workspace</span>
           <span>Analyze, map and search your code</span>
         </div>

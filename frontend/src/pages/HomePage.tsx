@@ -36,7 +36,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-8 shadow-[0_20px_60px_-40px_var(--shadow)]">
+        <div className="glass-surface rounded-3xl border p-8 shadow-[0_20px_60px_-40px_var(--shadow)]">
           <div className="flex flex-col gap-6">
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold text-[var(--text-strong)]">
@@ -100,7 +100,7 @@ export default function HomePage() {
         ].map((item) => (
           <div
             key={item.title}
-            className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[0_16px_40px_-30px_var(--shadow)]"
+            className="glass-surface rounded-3xl border p-6 shadow-[0_16px_40px_-30px_var(--shadow)]"
           >
             <h2 className="text-lg font-semibold text-[var(--text-strong)]">
               {item.title}

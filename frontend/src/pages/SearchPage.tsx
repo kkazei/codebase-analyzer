@@ -45,6 +45,12 @@ type ConversationTurn = ChatTurn & {
   sources: Record<string, unknown>[];
 };
 
+const sampleRepositories = [
+  { owner: "pallets", name: "flask", description: "Python web framework" },
+  { owner: "fastapi", name: "fastapi", description: "Modern Python API framework" },
+  { owner: "vitejs", name: "vite", description: "Frontend build tooling" },
+];
+
 function getSourcePaths(sources: Record<string, unknown>[]): string[] {
   return [...new Set(sources
     .map((source) => source.path)
@@ -448,29 +454,37 @@ export default function SearchPage() {
   };
 
   return (
-    <section className="grid gap-7">
-      <header className="max-w-3xl">
-        <h1 className="text-enter text-3xl font-semibold leading-tight tracking-[-0.03em] text-[var(--text-strong)] sm:text-4xl">
+    <section className="grid gap-9 sm:gap-11">
+      <header className={`grid max-w-4xl gap-3 ${analysisReady ? "mx-0 text-left" : "mx-auto text-center"}`}>
+        <p className="text-enter text-xs font-semibold uppercase tracking-[0.3em] text-[var(--accent)]">
+          {analysisReady ? "Repository workspace" : "Code intelligence workspace"}
+        </p>
+        <h1 className="text-enter text-4xl font-semibold leading-[1.08] tracking-[-0.045em] text-[var(--text-strong)] sm:text-5xl lg:text-[3.5rem]">
           Understand a codebase before you dive in.
         </h1>
-        <p className="text-enter text-enter-delayed mt-3 max-w-2xl text-base leading-7 text-[var(--text-muted)]">
+        <p className={`text-enter text-enter-delayed max-w-2xl text-base leading-7 text-[var(--text-muted)] ${analysisReady ? "" : "mx-auto"}`}>
           Analyze a GitHub repository, explore its structure and search across its code.
         </p>
       </header>
 
-      <div className="grid items-start gap-6 xl:grid-cols-[19rem_minmax(0,1fr)]">
-        <aside aria-labelledby="repository-source-title" className="grid gap-5 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6">
+      <div className={`grid items-start gap-6 sm:gap-8 ${analysisReady ? "xl:grid-cols-[18rem_minmax(0,1fr)]" : "grid-cols-1"}`}>
+        <aside
+          aria-labelledby="repository-source-title"
+          className={`glass-surface grid gap-5 rounded-[1.75rem] border p-5 sm:p-6 ${analysisReady ? "" : "mx-auto w-full max-w-4xl"}`}
+        >
           <div>
             <h2 id="repository-source-title" className="text-base font-semibold text-[var(--text-strong)]">
-              Repository source
+              {analysisReady ? "Active repository" : "Start with a repository"}
             </h2>
             <p className="mt-1 text-sm leading-6 text-[var(--text-muted)]">
-              Paste a GitHub URL to inspect files and prepare code search.
+              {analysisReady
+                ? "Repository details and indexing controls."
+                : "Paste a public GitHub URL to map its files and prepare code search."}
             </p>
           </div>
 
           <form
-            className="grid gap-4"
+            className={`grid gap-4 ${analysisReady ? "" : "sm:grid-cols-[minmax(0,1fr)_11rem_auto] sm:items-end"}`}
             onSubmit={(event) => {
               event.preventDefault();
               runAnalyze();
@@ -516,7 +530,7 @@ export default function SearchPage() {
                 ? "Analyzing repository…"
                 : analysisReady
                   ? "Reanalyze repository"
-                  : "Analyze repository"}
+                  : "Explore repository"}
             </button>
 
             {analysisReady ? (
@@ -529,6 +543,37 @@ export default function SearchPage() {
               </button>
             ) : null}
           </form>
+
+          {!analysisReady ? (
+            <div className="grid gap-3 border-t border-[var(--border)] pt-4">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <p className="text-sm font-medium text-[var(--text-strong)]">Try a starting point</p>
+                <span className="text-xs text-[var(--text-muted)]">Popular public repositories</span>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {sampleRepositories.map((repository) => {
+                  const fullName = `${repository.owner}/${repository.name}`;
+                  return (
+                    <button
+                      key={fullName}
+                      type="button"
+                      disabled={analyzeMutation.isPending}
+                      onClick={() => setRepoUrl(`https://github.com/${fullName}`)}
+                      className="group grid min-h-[4.5rem] content-center gap-1 rounded-xl border border-[var(--border)] bg-[color-mix(in_srgb,var(--surface)_64%,transparent)] px-3 py-2 text-left transition-[border-color,background-color,transform] duration-200 hover:-translate-y-0.5 hover:border-[var(--accent)] hover:bg-[var(--surface-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
+                    >
+                      <span className="flex items-center justify-between gap-2 font-mono text-xs font-medium text-[var(--text-strong)]">
+                        {fullName}
+                        <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)] transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-[var(--accent)]" fill="none">
+                          <path d="M5 11 11.5 4.5M5.5 4.5h6v6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </span>
+                      <span className="text-xs text-[var(--text-muted)]">{repository.description}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
 
           {analysisReady ? (
             <div className="grid gap-2 border-t border-[var(--border)] pt-4">
@@ -640,7 +685,7 @@ export default function SearchPage() {
                   role="tabpanel"
                   aria-labelledby="summary-tab"
                   tabIndex={0}
-                  className="panel-enter grid gap-6 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6"
+                  className="glass-surface panel-enter grid gap-6 rounded-2xl border p-5 sm:p-6"
                 >
                   <div>
                     <h3 className="text-base font-semibold text-[var(--text-strong)]">Repository overview</h3>
@@ -710,7 +755,7 @@ export default function SearchPage() {
                   role="tabpanel"
                   aria-labelledby="structure-tab"
                   tabIndex={0}
-                  className="panel-enter grid gap-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6"
+                  className="glass-surface panel-enter grid gap-4 rounded-2xl border p-5 sm:p-6"
                 >
                   <div>
                     <h3 className="text-base font-semibold text-[var(--text-strong)]">File structure</h3>
@@ -731,36 +776,84 @@ export default function SearchPage() {
               )}
             </div>
           ) : (
-            <div className="flex min-h-[340px] flex-col justify-center gap-3 rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface)] px-5 py-8 sm:px-8">
-              <h2 className="text-lg font-semibold text-[var(--text-strong)]">Your repository overview will appear here</h2>
-              <p className="max-w-xl text-sm leading-6 text-[var(--text-muted)]">
-                Analyze a repository to inspect its files, explore the folder structure, then search and ask questions about the indexed code.
-              </p>
-            </div>
+            <section aria-label="What you can explore" className="mx-auto grid w-full max-w-4xl gap-3 sm:grid-cols-3">
+              {[
+                {
+                  step: "01",
+                  title: "Map the structure",
+                  description: "Get a clear view of folders, files and repository size.",
+                },
+                {
+                  step: "02",
+                  title: "Search by intent",
+                  description: "Find code by symbol, file path or the behavior you need.",
+                },
+                {
+                  step: "03",
+                  title: "Ask follow-ups",
+                  description: "Explore the indexed code with answers grounded in source files.",
+                },
+              ].map((item) => (
+                <article key={item.step} className="glass-surface grid content-start gap-4 rounded-2xl border p-5 sm:min-h-44">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface-strong)] font-mono text-xs font-medium text-[var(--accent)]">
+                    {item.step}
+                  </span>
+                  <div>
+                    <h2 className="text-sm font-semibold text-[var(--text-strong)]">{item.title}</h2>
+                    <p className="mt-1.5 text-sm leading-6 text-[var(--text-muted)]">{item.description}</p>
+                  </div>
+                </article>
+              ))}
+            </section>
           )}
         </div>
       </div>
 
-      <div className="fixed bottom-4 left-4 right-4 z-40 sm:bottom-6 sm:left-auto sm:right-6 sm:w-[400px]">
-        <div className="flex justify-end">
-          <button
-            ref={chatToggleRef}
-            type="button"
-            aria-expanded={isChatOpen}
-            aria-controls="codebase-chat-panel"
-            onClick={() => setIsChatOpen((current) => !current)}
-            className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-[var(--accent)] px-4 text-sm font-semibold text-[var(--accent-contrast)] transition-[background-color,transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:bg-[var(--accent-strong)] hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)] active:translate-y-0"
-          >
-            <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4" fill="none">
+      <div className="chat-dock fixed bottom-4 left-4 right-4 z-40 sm:bottom-6 sm:left-auto sm:right-6 sm:w-[400px]" data-open={isChatOpen}>
+        <button
+          ref={chatToggleRef}
+          type="button"
+          aria-label={isChatOpen ? "Close chat panel" : "Ask about this code"}
+          aria-expanded={isChatOpen}
+          aria-controls="codebase-chat-panel"
+          onClick={() => setIsChatOpen((current) => !current)}
+          className="chat-dock-launcher"
+          data-open={isChatOpen}
+        >
+          <span className="chat-dock-icon" aria-hidden="true">
+            <svg viewBox="0 0 20 20" className="chat-dock-message-icon" fill="none">
               <path d="M3 4.75A2.25 2.25 0 0 1 5.25 2.5h9.5A2.25 2.25 0 0 1 17 4.75v6.5a2.25 2.25 0 0 1-2.25 2.25H8l-4.5 4v-4.35A2.25 2.25 0 0 1 3 11.25z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
               <path d="M6.5 7.25h7M6.5 10h4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
-            {isChatOpen ? "Close chat" : "Ask about this code"}
-          </button>
-        </div>
+            <svg viewBox="0 0 20 20" className="chat-dock-close-icon" fill="none">
+              <path d="m5 5 10 10M15 5 5 15" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+            </svg>
+          </span>
+          <span className="chat-dock-title">
+            <span className="chat-dock-title-main chat-dock-title-closed">Ask about this code</span>
+            <span className="chat-dock-title-main chat-dock-title-open">Ask CodeLens</span>
+            <span className="chat-dock-title-detail chat-dock-title-detail-closed">
+              {chatReady ? "Your codebase, in context" : "Analyze a repository to get started"}
+            </span>
+            <span className="chat-dock-title-detail chat-dock-title-detail-open" title={analysisReady ? repoLabel : undefined}>
+              {analysisReady ? repoLabel : "Codebase assistant"}
+            </span>
+          </span>
+          <span className="chat-dock-status" data-open={isChatOpen}>
+            <span className={`h-1.5 w-1.5 rounded-full ${chatReady ? "bg-[var(--accent)]" : "bg-[var(--text-muted)]"}`} aria-hidden="true" />
+            {chatReady
+              ? "Ready"
+              : ingestMutation.isPending
+                ? "Indexing"
+                : analysisReady
+                  ? "Preparing"
+                  : "No repo"}
+          </span>
+          <span className="sr-only">{isChatOpen ? "Close chat" : "Open chat"}</span>
+        </button>
 
         <div
-          className="chat-panel-shell"
+          className="chat-dock-body"
           data-open={isChatOpen}
           aria-hidden={!isChatOpen}
           inert={!isChatOpen}
@@ -768,32 +861,8 @@ export default function SearchPage() {
           <section
             id="codebase-chat-panel"
             aria-label="Codebase chat"
-            className="flex max-h-[calc(100dvh-5rem)] min-h-[360px] flex-col gap-4 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[0_16px_40px_-28px_rgba(0,0,0,0.8)]"
+            className="chat-dock-content flex min-h-0 flex-col gap-4 overflow-hidden p-4"
           >
-            <header className="flex items-center justify-between gap-3 border-b border-[var(--border)] pb-3">
-              <div className="flex min-w-0 items-center gap-2.5">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--accent-soft)] text-[var(--accent)]">
-                  <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4" fill="none">
-                    <path d="M3 4.75A2.25 2.25 0 0 1 5.25 2.5h9.5A2.25 2.25 0 0 1 17 4.75v6.5a2.25 2.25 0 0 1-2.25 2.25H8l-4.5 4v-4.35A2.25 2.25 0 0 1 3 11.25z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-                    <path d="M6.5 7.25h7M6.5 10h4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                  </svg>
-                </span>
-                <div className="min-w-0">
-                  <h2 className="text-sm font-semibold text-[var(--text-strong)]">Ask CodeLens</h2>
-                  {analysisReady ? <p className="truncate font-mono text-[11px] text-[var(--text-muted)]">{repoLabel}</p> : null}
-                </div>
-              </div>
-              <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-[var(--text-muted)]">
-                <span className={`h-1.5 w-1.5 rounded-full ${chatReady ? "bg-[var(--accent)]" : "bg-[var(--text-muted)]"}`} aria-hidden="true" />
-                {chatReady
-                  ? "Ready"
-                  : ingestMutation.isPending
-                    ? "Indexing repository"
-                    : analysisReady
-                      ? "Preparing index"
-                      : "No repository selected"}
-              </span>
-            </header>
 
             <div ref={conversationRef} className="min-h-0 flex-1 overflow-auto" aria-live="polite">
               {turns.length === 0 && !chatMutation.isPending && !failedQuestion ? (
