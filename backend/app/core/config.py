@@ -19,9 +19,9 @@ class Settings(BaseSettings):
     hf_api_token: str | None = None
     hf_embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     hf_embedding_dimension: int = 384
-    hf_device: str = "cpu"
 
-    hf_generation_model: str = "Qwen/Qwen2.5-7B-Instruct"
+    # When unset, Hugging Face InferenceClient selects its recommended chat model.
+    hf_generation_model: str | None = None
     hf_generation_max_new_tokens: int = 256
     hf_generation_temperature: float = 0.7
 

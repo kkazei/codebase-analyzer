@@ -16,6 +16,14 @@ class ChatInferenceError(RuntimeError):
     """Raised when the configured Hugging Face chat inference request fails."""
 
 
+def _is_model_not_supported_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return (
+        "model_not_supported" in message
+        or "not supported by any provider" in message
+    )
+
+
 @lru_cache(maxsize=1)
 def _build_client(token: str) -> InferenceClient:
     return InferenceClient(token=token, provider="auto")
@@ -27,7 +35,8 @@ class ChatService:
         self._embedder = embedder
         self._repo = repo
         self._api_token = settings.hf_api_token
-        self._model = settings.hf_generation_model
+        configured_model = settings.hf_generation_model
+        self._model = configured_model.strip() if configured_model else None
         self._max_new_tokens = settings.hf_generation_max_new_tokens
         self._temperature = settings.hf_generation_temperature
 
@@ -77,23 +86,61 @@ class ChatService:
         messages.append({"role": "user", "content": payload.question})
 
         client = _build_client(api_token)
+        model = self._model
         try:
-            response = await loop.run_in_executor(
-                None,
-                lambda: client.chat_completion(
-                    messages=messages,
-                    model=self._model,
-                    max_tokens=self._max_new_tokens,
-                    temperature=self._temperature,
-                ),
-            )
+            if model:
+                response = await loop.run_in_executor(
+                    None,
+                    lambda: client.chat_completion(
+                        messages=messages,
+                        model=model,
+                        max_tokens=self._max_new_tokens,
+                        temperature=self._temperature,
+                    ),
+                )
+            else:
+                response = await loop.run_in_executor(
+                    None,
+                    lambda: client.chat_completion(
+                        messages=messages,
+                        max_tokens=self._max_new_tokens,
+                        temperature=self._temperature,
+                    ),
+                )
         except Exception as exc:
-            logger.exception("Hugging Face chat inference failed")
-            raise ChatInferenceError(
-                "Hugging Face Inference could not answer. Check HF_API_TOKEN "
-                "permissions, remaining inference credits, and that "
-                "HF_GENERATION_MODEL supports chat completion."
-            ) from exc
+            if model and _is_model_not_supported_error(exc):
+                logger.warning(
+                    "Configured Hugging Face chat model %s is not available to the "
+                    "enabled providers; retrying with automatic model selection",
+                    model,
+                )
+                try:
+                    response = await loop.run_in_executor(
+                        None,
+                        lambda: client.chat_completion(
+                            messages=messages,
+                            max_tokens=self._max_new_tokens,
+                            temperature=self._temperature,
+                        ),
+                    )
+                except Exception as fallback_exc:
+                    logger.exception(
+                        "Hugging Face chat inference failed with automatic model selection"
+                    )
+                    raise ChatInferenceError(
+                        "HF_GENERATION_MODEL is unavailable to the enabled inference "
+                        "providers, and automatic model selection also failed. Clear "
+                        "HF_GENERATION_MODEL or set it to a chat model available to "
+                        "your Hugging Face token. Check the token's Inference Providers "
+                        "permission and available credits."
+                    ) from fallback_exc
+            else:
+                logger.exception("Hugging Face chat inference failed")
+                raise ChatInferenceError(
+                    "Hugging Face Inference could not answer. Check HF_API_TOKEN "
+                    "permissions, remaining inference credits, and that "
+                    "HF_GENERATION_MODEL supports chat completion."
+                ) from exc
 
         choices = response.choices
         answer = choices[0].message.content if choices else None
