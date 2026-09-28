@@ -45,7 +45,7 @@ docker compose up --build
 
 - Set `VITE_API_BASE_URL` to the deployed backend origin when the frontend and backend use different hosts. Leave it empty when the deployed frontend host reverse-proxies `/api/v1` to FastAPI. This value is embedded when Vite builds, so rebuild the frontend after changing it.
 - Set `FRONTEND_ORIGIN` to the deployed frontend origin in the backend environment so FastAPI allows browser requests from that site.
-- Set `HF_API_TOKEN` only in the backend environment. It needs Hugging Face Inference Providers access, with Nscale enabled for the recommended `HF_GENERATION_MODEL=Qwen/Qwen3-4B-Instruct-2507:nscale`. Choose a different chat model if Nscale is not enabled for that token.
+- Set `HF_API_TOKEN` only in the backend environment. It needs Hugging Face Inference Providers access, with Nscale enabled for the recommended `HF_GENERATION_MODEL=Qwen/Qwen2.5-Coder-32B-Instruct:nscale`. Choose a different chat model if Nscale is not enabled for that token.
 - Set the Pinecone credentials in the backend environment. Never put Hugging Face or Pinecone secrets in frontend variables.
 
 ## Local (Non-Docker) Setup
