@@ -2,21 +2,21 @@ import { Link } from "react-router-dom";
 
 export default function NotFoundPage() {
   return (
-    <section className="flex flex-col items-start gap-4 rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-8">
-      <p className="text-xs font-semibold uppercase tracking-[0.35em] text-[var(--accent)]">
+    <section className="flex min-h-[320px] flex-col items-start justify-center gap-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-6 sm:p-8">
+      <p className="text-sm font-medium text-[var(--text-muted)]">
         404
       </p>
-      <h1 className="text-3xl font-semibold text-[var(--text-strong)]">
-        This view does not exist yet.
+      <h1 className="text-2xl font-semibold text-[var(--text-strong)] sm:text-3xl">
+        This page could not be found.
       </h1>
-      <p className="text-sm text-[var(--text-muted)]">
-        Head back to the home page to continue exploring the workspace.
+      <p className="max-w-lg text-sm leading-6 text-[var(--text-muted)]">
+        The address may be outdated or typed incorrectly. Return to repository analysis to continue.
       </p>
       <Link
         to="/"
-        className="rounded-full border border-[var(--border)] px-5 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+        className="inline-flex min-h-11 items-center rounded-lg bg-[var(--accent)] px-4 text-sm font-semibold text-[var(--accent-contrast)] transition-colors hover:bg-[var(--accent-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface)]"
       >
-        Back home
+        Open repository analysis
       </Link>
     </section>
   );

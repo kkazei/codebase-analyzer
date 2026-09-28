@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactElement } from "react";
 
 import type { ChatTurn } from "@/features/chat";
 import { useChat } from "@/features/chat";
@@ -83,20 +83,34 @@ function buildFileTree(paths: string[]): TreeNode[] {
   return sortNodes(root);
 }
 
-function renderTree(nodes: TreeNode[]): JSX.Element {
+function renderTree(nodes: TreeNode[], depth = 0): ReactElement {
   return (
-    <ul className="grid gap-2">
+    <ul className="grid gap-1">
       {nodes.map((node) => (
-        <li key={`${node.type}-${node.name}`} className="grid gap-2">
-          <div className="flex items-center gap-2 text-sm text-[var(--text-strong)]">
-            <span className="text-[var(--text-muted)]">
-              {node.type === "folder" ? "▸" : "·"}
-            </span>
-            <span>{node.name}</span>
-          </div>
-          {node.children.length > 0 ? (
-            <div className="pl-4">{renderTree(node.children)}</div>
-          ) : null}
+        <li key={`${node.type}-${node.name}`} className="min-w-0">
+          {node.type === "folder" ? (
+            <details open={depth === 0} className="group">
+              <summary className="flex min-h-9 cursor-pointer list-none items-center gap-2 rounded-md px-2 text-sm text-[var(--text-strong)] transition-colors hover:bg-[var(--surface-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] [&::-webkit-details-marker]:hidden">
+                <svg aria-hidden="true" viewBox="0 0 16 16" className="h-4 w-4 shrink-0 text-[var(--accent)]" fill="none">
+                  <path d="M1.75 4.75h4l1.4 1.5h7.1v6.5h-12.5z" stroke="currentColor" strokeWidth="1.25" strokeLinejoin="round" />
+                  <path d="M1.75 6.25h12.5" stroke="currentColor" strokeWidth="1.25" />
+                </svg>
+                <span className="min-w-0 break-all font-mono text-[13px]">{node.name}</span>
+                <span aria-hidden="true" className="ml-auto text-xs text-[var(--text-muted)] transition-transform group-open:rotate-90">›</span>
+              </summary>
+              {node.children.length > 0 ? (
+                <div className="ml-4 border-l border-[var(--border)] pl-2">{renderTree(node.children, depth + 1)}</div>
+              ) : null}
+            </details>
+          ) : (
+            <div className="flex min-h-9 items-center gap-2 rounded-md px-2 text-sm text-[var(--text)] hover:bg-[var(--surface-strong)]">
+              <svg aria-hidden="true" viewBox="0 0 16 16" className="h-4 w-4 shrink-0 text-[var(--text-muted)]" fill="none">
+                <path d="M3.25 1.75h6l3.5 3.5v9h-9.5z" stroke="currentColor" strokeWidth="1.25" strokeLinejoin="round" />
+                <path d="M9.25 1.75v3.5h3.5" stroke="currentColor" strokeWidth="1.25" strokeLinejoin="round" />
+              </svg>
+              <span className="min-w-0 break-all font-mono text-[13px]">{node.name}</span>
+            </div>
+          )}
         </li>
       ))}
     </ul>
@@ -250,6 +264,7 @@ export default function SearchPage() {
     setProgressLabel("");
     setQuery("");
     setSubmittedQuery("");
+    setActiveTab("summary");
     setTurns([]);
     setQuestion("");
     analyzeMutation.reset();
@@ -325,6 +340,21 @@ export default function SearchPage() {
     );
   }, [ingestMutation.error, ingestMutation.isError]);
 
+  useEffect(() => {
+    if (!isChatOpen) {
+      return;
+    }
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsChatOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [isChatOpen]);
+
   const submitQuestion = (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || chatMutation.isPending) {
@@ -351,100 +381,53 @@ export default function SearchPage() {
   };
 
   return (
-    <section className="relative overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-8 shadow-[0_20px_60px_-40px_var(--shadow)]">
-      <div className="absolute inset-x-0 top-0 h-56 bg-[radial-gradient(circle_at_top,_var(--accent-soft),_transparent_70%)] opacity-70" />
-      <div className="absolute -right-16 top-16 hidden h-48 w-48 rounded-full bg-[var(--accent-soft)] blur-[80px] lg:block" />
-      <div className="relative flex flex-col gap-8">
-        <header className="flex flex-col gap-4 animate-fade-up">
-          {analysisReady ? (
-            <div className="flex flex-wrap items-center gap-3 text-xs uppercase tracking-[0.3em] text-[var(--text-muted)]">
-              <span className="rounded-full border border-[var(--border)] px-3 py-1">{repoLabel}</span>
-              <span className="rounded-full border border-[var(--border)] px-3 py-1">{fileCount} files</span>
-              <span className="rounded-full border border-[var(--border)] px-3 py-1">{chunkCount} chunks</span>
-              <span className="rounded-full border border-[var(--border)] px-3 py-1">branch {branchLabel}</span>
-            </div>
-          ) : null}
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--surface-strong)] shadow-[0_16px_30px_-20px_var(--shadow)] float-slow">
-                <svg
-                  aria-hidden="true"
-                  viewBox="0 0 48 48"
-                  className="h-6 w-6 text-[var(--accent)]"
-                  fill="none"
-                >
-                  <path
-                    d="M8 26C8 16.059 16.059 8 26 8C35.941 8 44 16.059 44 26"
-                    stroke="currentColor"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d="M26 8L32 14"
-                    stroke="currentColor"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                  />
-                  <circle cx="20" cy="28" r="9" stroke="currentColor" strokeWidth="3" />
-                </svg>
-              </div>
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-[var(--accent)]">
-                Analyze repository
-              </p>
-            </div>
-            <h1 className="text-3xl font-semibold text-[var(--text-strong)]">
-              Paste a GitHub repo to summarize and map structure.
-            </h1>
-            <p className="max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
-              After analysis completes, you will see the summary, structure, and search tools.
+    <section className="grid gap-7">
+      <header className="max-w-3xl">
+        <h1 className="text-3xl font-semibold leading-tight tracking-[-0.03em] text-[var(--text-strong)] sm:text-4xl">
+          Understand a codebase before you dive in.
+        </h1>
+        <p className="mt-3 max-w-2xl text-base leading-7 text-[var(--text-muted)]">
+          Analyze a GitHub repository, explore its structure and search across its code.
+        </p>
+      </header>
+
+      <div className="grid items-start gap-6 xl:grid-cols-[19rem_minmax(0,1fr)]">
+        <aside aria-labelledby="repository-source-title" className="grid gap-5 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6">
+          <div>
+            <h2 id="repository-source-title" className="text-base font-semibold text-[var(--text-strong)]">
+              Repository source
+            </h2>
+            <p className="mt-1 text-sm leading-6 text-[var(--text-muted)]">
+              Paste a GitHub URL to inspect files and prepare code search.
             </p>
           </div>
-        </header>
 
-        <form
-          className="grid gap-4 rounded-3xl border border-[var(--border)] bg-[var(--surface-strong)] p-6 animate-fade-up"
-          onSubmit={(event) => event.preventDefault()}
-        >
-          <label
-            htmlFor="repo-url"
-            className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--text-muted)]"
+          <form
+            className="grid gap-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              runAnalyze();
+            }}
           >
-            Repository URL
-          </label>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-            <input
-              id="repo-url"
-              type="url"
-              placeholder="https://github.com/owner/repo"
-              value={repoUrl}
-              onChange={(event) => setRepoUrl(event.target.value)}
-              onBlur={() => runAnalyze()}
-              onPaste={(event) => {
-                const input = event.currentTarget;
-                setTimeout(() => runAnalyze(input.value, branch), 0);
-              }}
-              disabled={analysisReady}
-              className={`h-14 w-full flex-1 rounded-2xl border px-4 text-base text-[var(--text-strong)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${
-                analysisReady
-                  ? "border-[var(--border)]/60 bg-[var(--surface-strong)]/70 text-[var(--text-muted)]"
-                  : "border-[var(--border)] bg-[var(--surface)]"
-              }`}
-            />
-            <button
-              type="button"
-              onClick={resetRepoSession}
-              className="rounded-full border border-[var(--border)] px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.3em] text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text-strong)]"
-            >
-              Change repo
-            </button>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
-            <div className="flex flex-col gap-3">
-              <label
-                htmlFor="repo-branch"
-                className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--text-muted)]"
-              >
-                Branch (optional)
+            <div className="grid gap-2">
+              <label htmlFor="repo-url" className="text-sm font-medium text-[var(--text)]">
+                GitHub repository URL
+              </label>
+              <input
+                id="repo-url"
+                type="url"
+                required
+                placeholder="https://github.com/owner/repo"
+                value={repoUrl}
+                onChange={(event) => setRepoUrl(event.target.value)}
+                disabled={analysisReady || analyzeMutation.isPending}
+                className="h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 text-sm text-[var(--text-strong)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <label htmlFor="repo-branch" className="text-sm font-medium text-[var(--text)]">
+                Branch <span className="font-normal text-[var(--text-muted)]">(optional)</span>
               </label>
               <input
                 id="repo-branch"
@@ -452,238 +435,316 @@ export default function SearchPage() {
                 placeholder="main"
                 value={branch}
                 onChange={(event) => setBranch(event.target.value)}
-                onBlur={() => runAnalyze()}
-                className="h-12 w-full rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 text-sm text-[var(--text-strong)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                disabled={analysisReady || analyzeMutation.isPending}
+                className="h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 text-sm text-[var(--text-strong)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
               />
             </div>
+
             <button
-              type="button"
-              onClick={() => runAnalyze()}
+              type="submit"
               disabled={!repoUrl.trim() || analyzeMutation.isPending}
-              className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-xs font-semibold uppercase tracking-[0.3em] text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+              className="min-h-11 rounded-lg bg-[var(--accent)] px-4 text-sm font-semibold text-[var(--accent-contrast)] transition-colors hover:bg-[var(--accent-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface)] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Reanalyze
+              {analyzeMutation.isPending
+                ? "Analyzing repository…"
+                : analysisReady
+                  ? "Reanalyze repository"
+                  : "Analyze repository"}
             </button>
-            <button
-              type="button"
-              onClick={() => runIngest()}
-              disabled={!repoUrl.trim() || ingestMutation.isPending}
-              className="rounded-2xl bg-[var(--accent)] px-4 py-3 text-xs font-semibold uppercase tracking-[0.3em] text-white shadow-[0_18px_40px_-20px_var(--accent-strong)] transition hover:translate-y-[-1px] hover:shadow-[0_24px_44px_-18px_var(--accent-strong)] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Reindex
-            </button>
-          </div>
+
+            {analysisReady ? (
+              <button
+                type="button"
+                onClick={resetRepoSession}
+                className="min-h-10 rounded-lg px-3 text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface-strong)] hover:text-[var(--text-strong)]"
+              >
+                Change repository
+              </button>
+            ) : null}
+          </form>
+
+          {analysisReady ? (
+            <div className="grid gap-2 border-t border-[var(--border)] pt-4">
+              <p className="text-sm font-medium text-[var(--text-strong)]">Code search index</p>
+              <p className="text-sm leading-6 text-[var(--text-muted)]">
+                {ingestMutation.isPending
+                  ? "Preparing indexed files for semantic search and chat."
+                  : ingestMutation.isSuccess
+                    ? `${indexedFiles.toLocaleString()} files are ready for search and chat.`
+                    : "Refresh the index to search this repository and ask questions about its code."}
+              </p>
+              <button
+                type="button"
+                onClick={() => runIngest()}
+                disabled={ingestMutation.isPending}
+                className="mt-1 min-h-10 w-fit rounded-lg border border-[var(--border)] px-3 text-sm font-medium text-[var(--text)] transition-colors hover:border-[var(--accent)] hover:text-[var(--text-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {ingestMutation.isPending ? "Indexing…" : "Reindex repository"}
+              </button>
+            </div>
+          ) : null}
+
           {ingestJobId ? (
-            <div className="grid gap-2">
+            <div className="grid gap-2" aria-live="polite">
               <div
-                className="progress-bar"
+                role="progressbar"
+                aria-label="Repository indexing progress"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={progressPercent}
+                className="h-2 w-full overflow-hidden rounded-full bg-[var(--surface-strong)]"
                 style={{ "--progress": `${progressPercent}%` } as CSSProperties}
               >
-                <div className="progress-bar-fill" />
+                <div
+                  className="h-full w-[var(--progress)] rounded-full bg-[var(--accent)] transition-[width] duration-300"
+                />
               </div>
-              <p className="text-xs uppercase tracking-[0.3em] text-[var(--text-muted)]">
-                {progressLabel || "Preparing index"}
+              <p className="text-sm text-[var(--text-muted)]">
+                {progressLabel || "Preparing repository index…"}
               </p>
             </div>
           ) : null}
           {ingestStatus ? (
-            <p className="text-xs uppercase tracking-[0.3em] text-[var(--text-muted)]">
+            <p role={ingestMutation.isError ? "alert" : "status"} className={`text-sm leading-6 ${ingestMutation.isError ? "text-[var(--danger)]" : "text-[var(--text-muted)]"}`}>
               {ingestStatus}
             </p>
           ) : null}
           {analyzeStatus ? (
-            <p className="text-xs uppercase tracking-[0.3em] text-[var(--text-muted)]">
+            <p role={analyzeMutation.isError ? "alert" : "status"} className={`text-sm leading-6 ${analyzeMutation.isError ? "text-[var(--danger)]" : "text-[var(--text-muted)]"}`}>
               {analyzeStatus}
             </p>
           ) : null}
-        </form>
+        </aside>
 
-        {analysisReady ? (
-          <div className="grid gap-8 animate-fade-up">
-            <div className="flex items-center gap-3">
-              {([
-                { id: "summary", label: "Summary" },
-                { id: "structure", label: "Structure" },
-              ] as const).map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] transition ${
-                    activeTab === tab.id
-                      ? "border-[var(--accent)] bg-[var(--surface-strong)] text-[var(--text-strong)]"
-                      : "border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-strong)]"
-                  }`}
+        <div className="min-w-0">
+          {analysisReady ? (
+            <div className="grid gap-5">
+              <header className="flex min-w-0 flex-col gap-3 border-b border-[var(--border)] pb-5 sm:flex-row sm:items-end sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm text-[var(--text-muted)]">Repository</p>
+                  <h2 className="mt-1 break-all font-mono text-xl font-medium tracking-tight text-[var(--text-strong)]">
+                    {repoLabel}
+                  </h2>
+                </div>
+                <p className="shrink-0 text-sm text-[var(--text-muted)]">
+                  {fileCount.toLocaleString()} files <span aria-hidden="true">/</span> branch {branchLabel}
+                </p>
+              </header>
+
+              <nav
+                role="tablist"
+                aria-label="Repository views"
+                className="flex w-fit max-w-full items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-1"
+              >
+                {([
+                  { id: "summary", label: "Overview" },
+                  { id: "structure", label: "File structure" },
+                ] as const).map((tab) => (
+                  <button
+                    key={tab.id}
+                    id={`${tab.id}-tab`}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab === tab.id}
+                    aria-controls={`${tab.id}-panel`}
+                    onClick={() => setActiveTab(tab.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                        event.preventDefault();
+                        const nextTab = tab.id === "summary" ? "structure" : "summary";
+                        setActiveTab(nextTab);
+                        document.getElementById(`${nextTab}-tab`)?.focus();
+                      }
+                    }}
+                    className={`min-h-10 rounded-md px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${
+                      activeTab === tab.id
+                        ? "bg-[var(--surface-strong)] text-[var(--text-strong)]"
+                        : "text-[var(--text-muted)] hover:text-[var(--text-strong)]"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </nav>
+
+              {activeTab === "summary" ? (
+                <section
+                  id="summary-panel"
+                  role="tabpanel"
+                  aria-labelledby="summary-tab"
+                  tabIndex={0}
+                  className="grid gap-6 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6"
                 >
-                  {tab.label}
-                </button>
-              ))}
+                  <div>
+                    <h3 className="text-base font-semibold text-[var(--text-strong)]">Repository overview</h3>
+                    <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
+                      This repository contains {fileCount.toLocaleString()} files across {formatBytes(analyzeMutation.data.total_bytes)}.
+                    </p>
+                  </div>
+
+                  <dl className="grid gap-4 border-y border-[var(--border)] py-4 sm:grid-cols-3">
+                    <div>
+                      <dt className="text-sm text-[var(--text-muted)]">Files</dt>
+                      <dd className="mt-1 text-lg font-medium tabular-nums text-[var(--text-strong)]">{fileCount.toLocaleString()}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-sm text-[var(--text-muted)]">Repository size</dt>
+                      <dd className="mt-1 text-lg font-medium tabular-nums text-[var(--text-strong)]">{formatBytes(analyzeMutation.data.total_bytes)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-sm text-[var(--text-muted)]">Indexed chunks</dt>
+                      <dd className="mt-1 text-lg font-medium tabular-nums text-[var(--text-strong)]">
+                        {ingestMutation.isSuccess ? chunkCount.toLocaleString() : ingestMutation.isPending ? "Indexing" : "Not indexed"}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  <div>
+                    <h3 className="text-sm font-medium text-[var(--text-strong)]">Top-level entries</h3>
+                    <p className="mt-2 break-words font-mono text-[13px] leading-6 text-[var(--text-muted)]">
+                      {analyzeMutation.data.top_level_entries.length > 0
+                        ? analyzeMutation.data.top_level_entries.join("  /  ")
+                        : "No top-level entries were found."}
+                    </p>
+                  </div>
+
+                  <div className="grid gap-4 border-t border-[var(--border)] pt-5">
+                    <div>
+                      <h3 className="text-base font-semibold text-[var(--text-strong)]">Search the code</h3>
+                      <p className="mt-1 text-sm leading-6 text-[var(--text-muted)]">
+                        Find a symbol, path or behavior across indexed files.
+                      </p>
+                    </div>
+                    <SearchForm
+                      value={query}
+                      onChange={setQuery}
+                      onSubmit={() => setSubmittedQuery(query.trim())}
+                      disabled={!chatReady}
+                      isLoading={isLoading}
+                    />
+                    {!chatReady ? (
+                      <p role="status" className="text-sm text-[var(--text-muted)]">
+                        Search will be available when indexing finishes.
+                      </p>
+                    ) : null}
+                    {chatReady ? (
+                      <SearchResults
+                        isLoading={isLoading}
+                        errorMessage={errorMessage}
+                        results={data?.results ?? []}
+                        hasSearched={submittedQuery.length > 0}
+                      />
+                    ) : null}
+                  </div>
+                </section>
+              ) : (
+                <section
+                  id="structure-panel"
+                  role="tabpanel"
+                  aria-labelledby="structure-tab"
+                  tabIndex={0}
+                  className="grid gap-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6"
+                >
+                  <div>
+                    <h3 className="text-base font-semibold text-[var(--text-strong)]">File structure</h3>
+                    <p className="mt-1 text-sm text-[var(--text-muted)]">
+                      Expand folders to follow how this repository is organized.
+                    </p>
+                  </div>
+                  {structureTree.length > 0 ? (
+                    <div className="max-h-[min(62vh,680px)] overflow-auto rounded-lg border border-[var(--border)] bg-[var(--bg)] p-3 sm:p-4">
+                      <div className="grid gap-1">{renderTree(structureTree)}</div>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-dashed border-[var(--border)] p-4 text-sm leading-6 text-[var(--text-muted)]">
+                      Repository analysis did not return a file list. Reanalyze the repository to try again.
+                    </div>
+                  )}
+                </section>
+              )}
             </div>
-
-            {activeTab === "summary" ? (
-              <div className="grid gap-6 rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-6">
-                <div className="grid gap-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--accent)]">
-                    What it does
-                  </p>
-                  <p className="text-sm leading-6 text-[var(--text-muted)]">
-                    This repository contains {fileCount.toLocaleString()} files
-                    across {formatBytes(analyzeMutation.data.total_bytes)}.
-                    Use indexing when you want semantic search and chat responses.
-                  </p>
-                </div>
-
-                <div className="grid gap-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--accent)]">
-                    Key capabilities
-                  </p>
-                  <ul className="grid gap-2 text-sm text-[var(--text-strong)]">
-                    <li>Top-level entries: {analyzeMutation.data.top_level_entries.join(", ")}</li>
-                    <li>Indexed files: {indexedFiles.toLocaleString()}</li>
-                    <li>Indexed chunks: {chunkCount.toLocaleString()}</li>
-                  </ul>
-                </div>
-
-                <div className="grid gap-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--accent)]">
-                    Search the repo
-                  </p>
-                  <SearchForm
-                    value={query}
-                    onChange={setQuery}
-                    onSubmit={() => setSubmittedQuery(query.trim())}
-                  />
-                  <SearchResults
-                    isLoading={isLoading}
-                    errorMessage={errorMessage}
-                    results={data?.results ?? []}
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="grid gap-6 rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-6">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--accent)]">
-                    Structure
-                  </p>
-                  <span className="rounded-full border border-[var(--border)] px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--text-muted)]">
-                    Analyzed
-                  </span>
-                </div>
-                {structureTree.length > 0 ? (
-                  <div className="max-h-[360px] overflow-auto rounded-2xl border border-[var(--border)] bg-[var(--surface-strong)] p-4">
-                    <div className="grid gap-2">{renderTree(structureTree)}</div>
-                  </div>
-                ) : (
-                  <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-strong)] p-4 text-sm text-[var(--text-muted)]">
-                    Index the repo to preview the file tree.
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-6 text-sm text-[var(--text-muted)]">
-            Paste a GitHub repository URL to begin analysis. Summary, structure, and search results appear after analysis completes.
-          </div>
-        )}
+          ) : (
+            <div className="flex min-h-[340px] flex-col justify-center gap-3 rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface)] px-5 py-8 sm:px-8">
+              <h2 className="text-lg font-semibold text-[var(--text-strong)]">Your repository overview will appear here</h2>
+              <p className="max-w-xl text-sm leading-6 text-[var(--text-muted)]">
+                Analyze a repository to inspect its files, explore the folder structure, then search and ask questions about the indexed code.
+              </p>
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="fixed bottom-6 left-4 right-4 z-40 sm:left-auto sm:right-6 sm:w-[420px]">
+      <div className="fixed bottom-4 left-4 right-4 z-40 sm:bottom-6 sm:left-auto sm:right-6 sm:w-[400px]">
         <div className="flex justify-end">
           <button
             type="button"
+            aria-expanded={isChatOpen}
+            aria-controls="codebase-chat-panel"
             onClick={() => setIsChatOpen((current) => !current)}
-            className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-5 py-3 text-xs font-semibold uppercase tracking-[0.3em] text-[var(--text-strong)] shadow-[0_18px_40px_-20px_var(--shadow)] transition hover:border-[var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)]"
+            className="min-h-11 rounded-lg bg-[var(--accent)] px-4 text-sm font-semibold text-[var(--accent-contrast)] transition-colors hover:bg-[var(--accent-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)]"
           >
-            {isChatOpen ? "Close chat" : "Ask CodeLens"}
+            {isChatOpen ? "Close chat" : "Ask about this code"}
           </button>
         </div>
 
         {isChatOpen ? (
-          <section className="mt-3 flex max-h-[75vh] min-h-[420px] flex-col gap-4 overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[0_20px_50px_-35px_var(--shadow)] animate-fade-up">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--surface-strong)]">
-                  <svg
-                    aria-hidden="true"
-                    viewBox="0 0 48 48"
-                    className="h-5 w-5 text-[var(--accent)]"
-                    fill="none"
-                  >
-                    <rect x="10" y="12" width="28" height="22" rx="6" stroke="currentColor" strokeWidth="2.5" />
-                    <path d="M16 20H32" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                    <path d="M16 26H26" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                  </svg>
-                </div>
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--text-muted)]">
-                  Ask CodeLens
-                </p>
-              </div>
-              <span className="rounded-full border border-[var(--border)] px-2 py-1 text-[10px] uppercase tracking-[0.3em] text-[var(--text-muted)]">
-                {chatReady ? "Ready" : "Indexing"}
+          <section
+            id="codebase-chat-panel"
+            aria-label="Codebase chat"
+            className="mt-3 flex max-h-[calc(100dvh-5rem)] min-h-[360px] flex-col gap-4 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[0_16px_40px_-28px_rgba(0,0,0,0.8)]"
+          >
+            <header className="flex items-center justify-between border-b border-[var(--border)] pb-3">
+              <h2 className="text-sm font-semibold text-[var(--text-strong)]">Ask CodeLens</h2>
+              <span className="text-xs text-[var(--text-muted)]">
+                {chatReady
+                  ? "Ready"
+                  : ingestMutation.isPending
+                    ? "Indexing repository"
+                    : analysisReady
+                      ? "Preparing index"
+                      : "No repository selected"}
               </span>
-            </div>
+            </header>
 
-            {turns.length === 0 ? (
-              <div className="grid gap-3">
-                <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-strong)] p-3 text-xs text-[var(--text-muted)]">
-                  Ask anything about this codebase. Responses are grounded in indexed files.
-                </div>
-
-                <div className="grid gap-2">
-                  {[
-                    "What is this project for and how do I run it?",
-                    "Walk me through the entry point of the app.",
-                    "Where are the API routes defined?",
-                  ].map((prompt) => (
-                    <button
-                      key={prompt}
-                      type="button"
-                      onClick={() => submitQuestion(prompt)}
-                      disabled={!chatReady || chatMutation.isPending}
-                      className="rounded-2xl border border-[var(--border)] bg-[var(--surface-strong)] px-4 py-2 text-left text-xs text-[var(--text-strong)] transition disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {prompt}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="flex-1 overflow-auto rounded-2xl border border-[var(--border)] bg-[var(--surface-strong)] p-4">
+            <div className="min-h-0 flex-1 overflow-auto" aria-live="polite">
               {turns.length === 0 ? (
-                <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 text-xs text-[var(--text-muted)]">
-                  Start a conversation after indexing a repository.
+                <div className="grid gap-3">
+                  <p className="text-sm leading-6 text-[var(--text-muted)]">
+                    {chatReady
+                      ? "Ask about the codebase. Answers use its indexed files as context."
+                      : "Analyze and index a repository before asking questions about its code."}
+                  </p>
+                  {chatReady ? (
+                    <div className="grid gap-2">
+                      {[
+                        "What is this project for and how do I run it?",
+                        "Walk me through the application entry point.",
+                        "Where are the API routes defined?",
+                      ].map((prompt) => (
+                        <button
+                          key={prompt}
+                          type="button"
+                          onClick={() => submitQuestion(prompt)}
+                          disabled={chatMutation.isPending}
+                          className="min-h-11 rounded-md border border-[var(--border)] px-3 py-2 text-left text-sm text-[var(--text)] transition-colors hover:bg-[var(--surface-strong)] hover:text-[var(--text-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {prompt}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               ) : (
-                <div className="grid gap-4">
+                <div className="grid gap-5">
                   {turns.map((turn, index) => (
                     <div key={`${turn.user}-${index}`} className="grid gap-3">
-                      <div className="flex items-start justify-end gap-2">
-                        <div className="max-w-[85%] rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm text-white shadow-[0_12px_30px_-20px_var(--shadow)] chat-pop">
-                          <p className="break-words whitespace-pre-wrap">{turn.user}</p>
-                        </div>
-                        <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--surface)] text-xs text-[var(--text-muted)]">
-                          You
-                        </div>
+                      <div className="ml-auto max-w-[90%] rounded-lg bg-[var(--accent-soft)] px-3 py-2 text-sm text-[var(--text-strong)]">
+                        <p className="mb-1 text-xs font-medium text-[var(--text-muted)]">You</p>
+                        <p className="break-words whitespace-pre-wrap">{turn.user}</p>
                       </div>
-                      <div className="flex items-start gap-2">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
-                          <svg
-                            aria-hidden="true"
-                            viewBox="0 0 48 48"
-                            className="h-5 w-5 text-[var(--accent)]"
-                            fill="none"
-                          >
-                            <rect x="10" y="12" width="28" height="22" rx="6" stroke="currentColor" strokeWidth="2.5" />
-                            <path d="M18 19H30" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                            <path d="M18 25H26" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                          </svg>
-                        </div>
-                        <div className="max-w-[85%] rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--text-strong)] shadow-[0_12px_30px_-20px_var(--shadow)] chat-pop">
-                          <p className="break-words whitespace-pre-wrap">{turn.assistant}</p>
-                        </div>
+                      <div className="max-w-[92%] rounded-lg border border-[var(--border)] bg-[var(--surface-strong)] px-3 py-2 text-sm leading-6 text-[var(--text-strong)]">
+                        <p className="mb-1 text-xs font-medium text-[var(--text-muted)]">CodeLens</p>
+                        <p className="break-words whitespace-pre-wrap">{turn.assistant}</p>
                       </div>
                     </div>
                   ))}
@@ -692,26 +753,19 @@ export default function SearchPage() {
             </div>
 
             <form
-              className="grid gap-3"
+              className="grid gap-2 border-t border-[var(--border)] pt-3"
               onSubmit={(event) => {
                 event.preventDefault();
                 submitQuestion(question);
               }}
             >
-              <label
-                htmlFor="chat-input"
-                className="text-xs font-semibold uppercase tracking-[0.3em] text-[var(--text-muted)]"
-              >
-                Ask a question
+              <label htmlFor="chat-input" className="text-sm font-medium text-[var(--text)]">
+                Your question
               </label>
               <textarea
                 id="chat-input"
                 rows={3}
-                placeholder={
-                  chatReady
-                    ? "Ask about architecture, ownership, or impact"
-                    : "Chat unlocks after indexing"
-                }
+                placeholder={chatReady ? "Ask about a file, function or architecture" : "Index a repository to ask a question"}
                 value={question}
                 onChange={(event) => setQuestion(event.target.value)}
                 onKeyDown={(event) => {
@@ -721,19 +775,20 @@ export default function SearchPage() {
                   }
                 }}
                 disabled={!chatReady}
-                className="min-h-[96px] w-full resize-none rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--text-strong)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-70"
+                className="min-h-20 w-full resize-y rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm leading-6 text-[var(--text-strong)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
               />
-              <button
-                type="submit"
-                disabled={!chatReady || chatMutation.isPending}
-                className="rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white shadow-[0_18px_40px_-20px_var(--accent-strong)] transition hover:translate-y-[-1px] hover:shadow-[0_24px_44px_-18px_var(--accent-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)] disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {chatMutation.isPending ? "Sending" : "Send"}
-              </button>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-[var(--text-muted)]">Enter to send, Shift+Enter for a new line</p>
+                <button
+                  type="submit"
+                  disabled={!chatReady || chatMutation.isPending || !question.trim()}
+                  className="min-h-10 rounded-lg bg-[var(--accent)] px-4 text-sm font-semibold text-[var(--accent-contrast)] transition-colors hover:bg-[var(--accent-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {chatMutation.isPending ? "Sending…" : "Send question"}
+                </button>
+              </div>
               {chatStatus ? (
-                <p className="text-xs uppercase tracking-[0.3em] text-[var(--text-muted)]">
-                  {chatStatus}
-                </p>
+                <p role="alert" className="text-sm text-[var(--danger)]">{chatStatus}</p>
               ) : null}
             </form>
           </section>

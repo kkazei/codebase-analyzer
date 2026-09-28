@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import {
   createBrowserRouter,
   NavLink,
@@ -13,32 +13,23 @@ const THEME_STORAGE_KEY = "codelens-theme";
 
 const SearchPage = lazy(() => import("../pages/SearchPage"));
 
-function getPreferredTheme(): ThemeMode {
+function getInitialTheme(): ThemeMode {
   if (typeof window === "undefined") {
-    return "light";
+    return "dark";
   }
 
-  return window.matchMedia("(prefers-color-scheme: dark)").matches
-    ? "dark"
-    : "light";
+  try {
+    const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    return storedTheme === "light" || storedTheme === "dark"
+      ? storedTheme
+      : "dark";
+  } catch {
+    return "dark";
+  }
 }
 
 function RootLayout() {
-  const [theme, setTheme] = useState<ThemeMode>("light");
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
-    const nextTheme =
-      storedTheme === "light" || storedTheme === "dark"
-        ? storedTheme
-        : getPreferredTheme();
-
-    setTheme(nextTheme);
-  }, []);
+  const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
 
   useEffect(() => {
     if (typeof document === "undefined") {
@@ -48,20 +39,23 @@ function RootLayout() {
     const root = document.documentElement;
     root.classList.remove("theme-light", "theme-dark");
     root.classList.add(`theme-${theme}`);
-    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    const themeColor = document.querySelector('meta[name="theme-color"]');
+    themeColor?.setAttribute("content", theme === "dark" ? "#11181b" : "#f0f4f3");
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // The in-memory theme remains usable when storage is unavailable.
+    }
   }, [theme]);
 
-  const nextThemeLabel = useMemo(
-    () => (theme === "dark" ? "Light" : "Dark"),
-    [theme]
-  );
+  const nextThemeLabel = theme === "dark" ? "light" : "dark";
 
   return (
     <div className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
-      <header className="border-b border-[var(--border)]">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-[0_10px_30px_-15px_var(--shadow)]">
+      <header className="border-b border-[var(--border)] bg-[var(--surface)]">
+        <div className="mx-auto flex min-h-[72px] w-full max-w-7xl items-center justify-between gap-5 px-5 sm:px-7">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface-strong)]">
               <svg
                 aria-hidden="true"
                 viewBox="0 0 48 48"
@@ -82,13 +76,13 @@ function RootLayout() {
               <p className="text-sm font-semibold text-[var(--text-strong)]">
                 CodeLens
               </p>
-              <p className="text-xs uppercase tracking-[0.3em] text-[var(--text-muted)]">
-                Code intelligence studio
+              <p className="hidden text-xs text-[var(--text-muted)] sm:block">
+                Repository workspace
               </p>
             </div>
           </div>
 
-          <nav className="hidden items-center gap-6 text-xs font-semibold uppercase tracking-[0.3em] text-[var(--text-muted)] sm:flex">
+          <nav aria-label="Primary navigation" className="hidden items-center gap-1 sm:flex">
             {[
               { to: "/", label: "Analyze" },
             ].map((item) => (
@@ -96,8 +90,10 @@ function RootLayout() {
                 key={item.to}
                 to={item.to}
                 className={({ isActive }) =>
-                  `transition hover:text-[var(--text-strong)] ${
-                    isActive ? "text-[var(--text-strong)]" : ""
+                  `rounded-md px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${
+                    isActive
+                      ? "bg-[var(--surface-strong)] text-[var(--text-strong)]"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-strong)]"
                   }`
                 }
               >
@@ -109,62 +105,42 @@ function RootLayout() {
           <button
             type="button"
             aria-label={`Switch to ${nextThemeLabel} mode`}
+            aria-pressed={theme === "dark"}
             onClick={() =>
               setTheme((current) => (current === "dark" ? "light" : "dark"))
             }
-            className="group flex items-center gap-3 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)]"
+            className="flex min-h-11 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-sm font-medium text-[var(--text)] transition-colors hover:border-[var(--accent)] hover:text-[var(--text-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface)]"
           >
-            <span className="relative flex h-7 w-7 items-center justify-center overflow-hidden rounded-full bg-[var(--surface-strong)] text-[var(--text-strong)]">
-              <svg
-                aria-hidden="true"
-                viewBox="0 0 24 24"
-                className={`h-4 w-4 transition-all ${
-                  theme === "dark"
-                    ? "-translate-y-6 opacity-0"
-                    : "translate-y-0 opacity-100"
-                }`}
-                fill="none"
-              >
-                <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="2" />
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none">
+              {theme === "dark" ? (
+                <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.8" />
+              ) : (
                 <path
-                  d="M12 2V5M12 19V22M4.2 4.2L6.3 6.3M17.7 17.7L19.8 19.8M2 12H5M19 12H22M4.2 19.8L6.3 17.7M17.7 6.3L19.8 4.2"
+                  d="M20.2 15.1A8.5 8.5 0 0 1 8.9 3.8 8.5 8.5 0 1 0 20.2 15.1Z"
                   stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                />
-              </svg>
-              <svg
-                aria-hidden="true"
-                viewBox="0 0 24 24"
-                className={`absolute h-4 w-4 transition-all ${
-                  theme === "dark"
-                    ? "translate-y-0 opacity-100"
-                    : "translate-y-6 opacity-0"
-                }`}
-                fill="none"
-              >
-                <path
-                  d="M21 14.5C19.7 15.2 18.2 15.6 16.6 15.6C12.2 15.6 8.7 12.1 8.7 7.7C8.7 6.1 9.1 4.6 9.8 3.3C6.1 4.4 3.4 7.9 3.4 12C3.4 16.9 7.4 20.9 12.3 20.9C16.4 20.9 19.9 18.2 21 14.5Z"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
+                  strokeWidth="1.8"
                   strokeLinejoin="round"
                 />
-              </svg>
-            </span>
-            Theme
-            <span className="rounded-full bg-[var(--surface-strong)] px-2 py-1 text-[10px] text-[var(--text-strong)]">
-              {nextThemeLabel}
-            </span>
+              )}
+              {theme === "dark" ? (
+                <path
+                  d="M12 2.5v2M12 19.5v2M4.8 4.8l1.4 1.4M17.8 17.8l1.4 1.4M2.5 12h2M19.5 12h2M4.8 19.2l1.4-1.4M17.8 6.2l1.4-1.4"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                />
+              ) : null}
+            </svg>
+            <span className="capitalize">{theme}</span>
           </button>
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl px-6 pb-16 pt-10">
+      <main className="mx-auto w-full max-w-7xl px-5 pb-14 pt-8 sm:px-7 sm:pt-10">
         <Suspense
           fallback={
-            <div className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-10 text-sm text-[var(--text-muted)]">
-              Loading view...
+            <div role="status" className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-6 text-sm text-[var(--text-muted)]">
+              Opening the repository workspace…
             </div>
           }
         >
@@ -173,8 +149,9 @@ function RootLayout() {
       </main>
 
       <footer className="border-t border-[var(--border)]">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-6 py-8 text-xs uppercase tracking-[0.35em] text-[var(--text-muted)] sm:flex-row sm:items-center sm:justify-between">
-          <span>CodeLens</span>
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-2 px-5 py-5 text-xs text-[var(--text-muted)] sm:flex-row sm:items-center sm:justify-between sm:px-7">
+          <span>CodeLens repository workspace</span>
+          <span>Analyze, map and search your code</span>
         </div>
       </footer>
     </div>
