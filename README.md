@@ -41,6 +41,13 @@ docker compose up --build
 - Frontend: http://localhost:5173
 - Backend health: http://localhost:8000/api/v1/health/
 
+## Deployment Configuration
+
+- Set `VITE_API_BASE_URL` to the deployed backend origin when the frontend and backend use different hosts. Leave it empty when the deployed frontend host reverse-proxies `/api/v1` to FastAPI. This value is embedded when Vite builds, so rebuild the frontend after changing it.
+- Set `FRONTEND_ORIGIN` to the deployed frontend origin in the backend environment so FastAPI allows browser requests from that site.
+- Set `HF_API_TOKEN` only in the backend environment. It needs Hugging Face Inference Providers access. Set `HF_GENERATION_MODEL` to a model available to that token that supports chat completion; the example defaults to `Qwen/Qwen2.5-7B-Instruct`.
+- Set the Pinecone credentials in the backend environment. Never put Hugging Face or Pinecone secrets in frontend variables.
+
 ## Local (Non-Docker) Setup
 
 Use this if you want faster local loops and already have Python 3.11+ and Node 22+.

@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement } from "react";
 
 import type { ChatTurn } from "@/features/chat";
 import { useChat } from "@/features/chat";
 import { ingestService, useAnalyzeRepo, useIngest } from "@/features/ingest";
 import { SearchForm, SearchResults, useSearch } from "@/features/search";
+import { API_BASE_URL } from "@/shared/utils/apiClient";
 
 function getApiErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) {
@@ -39,6 +40,17 @@ type TreeNode = {
   type: "file" | "folder";
   children: TreeNode[];
 };
+
+type ConversationTurn = ChatTurn & {
+  sources: Record<string, unknown>[];
+};
+
+function getSourcePaths(sources: Record<string, unknown>[]): string[] {
+  return [...new Set(sources
+    .map((source) => source.path)
+    .filter((path): path is string => typeof path === "string" && path.length > 0))]
+    .slice(0, 4);
+}
 
 // Build a stable, deterministic tree for the Structure tab.
 function buildFileTree(paths: string[]): TreeNode[] {
@@ -117,13 +129,46 @@ function renderTree(nodes: TreeNode[], depth = 0): ReactElement {
   );
 }
 
+function getChatErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    if (["network error", "failed to fetch"].includes(error.message.toLowerCase())) {
+      const apiTarget = API_BASE_URL || `${window.location.origin}/api/v1`;
+      const nextStep = import.meta.env.DEV
+        ? "Check that the backend is running."
+        : "Check the deployment's VITE_API_BASE_URL or its /api/v1 reverse-proxy route.";
+      return `Can't connect to the chat API at ${apiTarget}. ${nextStep}`;
+    }
+
+    if (error.message.toLowerCase().includes("timeout")) {
+      return "Hugging Face Inference took too long to answer. Check the configured model's provider status, then retry.";
+    }
+  }
+
+  return getApiErrorMessage(error, "The chat request failed. Check the backend and retry.");
+}
+
+function TypingIndicator(): ReactElement {
+  return (
+    <div className="message-enter grid gap-1.5" role="status" aria-label="CodeLens is reading the indexed code">
+      <p className="text-xs font-medium text-[var(--text-muted)]">CodeLens</p>
+      <div className="flex h-9 w-fit items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-strong)] px-3">
+        <span className="typing-dot" />
+        <span className="typing-dot" />
+        <span className="typing-dot" />
+        <span className="sr-only">Thinking through the indexed code</span>
+      </div>
+    </div>
+  );
+}
+
 export default function SearchPage() {
   const [query, setQuery] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
   const [branch, setBranch] = useState("");
   const [question, setQuestion] = useState("");
-  const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const [turns, setTurns] = useState<ConversationTurn[]>([]);
+  const [failedQuestion, setFailedQuestion] = useState<string | null>(null);
   const [analyzedKey, setAnalyzedKey] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"summary" | "structure">("summary");
   const [ingestJobId, setIngestJobId] = useState<string | null>(null);
@@ -131,6 +176,8 @@ export default function SearchPage() {
   const [progressPercent, setProgressPercent] = useState(0);
   const [progressLabel, setProgressLabel] = useState("");
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const conversationRef = useRef<HTMLDivElement | null>(null);
+  const chatToggleRef = useRef<HTMLButtonElement | null>(null);
   const analyzeMutation = useAnalyzeRepo();
   const ingestMutation = useIngest();
   const chatMutation = useChat();
@@ -194,15 +241,15 @@ export default function SearchPage() {
 
   const chatStatus = useMemo(() => {
     if (chatMutation.isPending) {
-      return "Asking the assistant...";
+      return "Thinking through the indexed code…";
     }
 
     if (chatMutation.isError) {
-      return "Unable to reach the chat service. Try again.";
+      return getChatErrorMessage(chatMutation.error);
     }
 
     return null;
-  }, [chatMutation.isError, chatMutation.isPending]);
+  }, [chatMutation.error, chatMutation.isError, chatMutation.isPending]);
 
   const repoLabel =
     analyzeMutation.data?.repo ?? ingestMutation.data?.repo ?? "No repo selected";
@@ -266,9 +313,11 @@ export default function SearchPage() {
     setSubmittedQuery("");
     setActiveTab("summary");
     setTurns([]);
+    setFailedQuestion(null);
     setQuestion("");
     analyzeMutation.reset();
     ingestMutation.reset();
+    chatMutation.reset();
   };
 
   useEffect(() => {
@@ -348,6 +397,7 @@ export default function SearchPage() {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setIsChatOpen(false);
+        chatToggleRef.current?.focus();
       }
     };
 
@@ -355,25 +405,42 @@ export default function SearchPage() {
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [isChatOpen]);
 
+  useEffect(() => {
+    const conversation = conversationRef.current;
+    if (!conversation || !isChatOpen) {
+      return;
+    }
+
+    conversation.scrollTo({
+      top: conversation.scrollHeight,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+    });
+  }, [turns, failedQuestion, chatMutation.isPending, isChatOpen]);
+
   const submitQuestion = (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || chatMutation.isPending) {
       return;
     }
 
+    setFailedQuestion(null);
     chatMutation.mutate(
       {
         question: trimmed,
-        history: turns,
+        history: turns.map(({ user, assistant }) => ({ user, assistant })),
         filter: scopedFilter,
       },
       {
         onSuccess: (response) => {
+          setFailedQuestion(null);
           setTurns((current) => [
             ...current,
-            { user: trimmed, assistant: response.answer },
+            { user: trimmed, assistant: response.answer, sources: response.sources },
           ]);
         },
+        onError: () => setFailedQuestion(trimmed),
       }
     );
 
@@ -383,10 +450,10 @@ export default function SearchPage() {
   return (
     <section className="grid gap-7">
       <header className="max-w-3xl">
-        <h1 className="text-3xl font-semibold leading-tight tracking-[-0.03em] text-[var(--text-strong)] sm:text-4xl">
+        <h1 className="text-enter text-3xl font-semibold leading-tight tracking-[-0.03em] text-[var(--text-strong)] sm:text-4xl">
           Understand a codebase before you dive in.
         </h1>
-        <p className="mt-3 max-w-2xl text-base leading-7 text-[var(--text-muted)]">
+        <p className="text-enter text-enter-delayed mt-3 max-w-2xl text-base leading-7 text-[var(--text-muted)]">
           Analyze a GitHub repository, explore its structure and search across its code.
         </p>
       </header>
@@ -573,7 +640,7 @@ export default function SearchPage() {
                   role="tabpanel"
                   aria-labelledby="summary-tab"
                   tabIndex={0}
-                  className="grid gap-6 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6"
+                  className="panel-enter grid gap-6 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6"
                 >
                   <div>
                     <h3 className="text-base font-semibold text-[var(--text-strong)]">Repository overview</h3>
@@ -643,7 +710,7 @@ export default function SearchPage() {
                   role="tabpanel"
                   aria-labelledby="structure-tab"
                   tabIndex={0}
-                  className="grid gap-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6"
+                  className="panel-enter grid gap-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6"
                 >
                   <div>
                     <h3 className="text-base font-semibold text-[var(--text-strong)]">File structure</h3>
@@ -677,25 +744,47 @@ export default function SearchPage() {
       <div className="fixed bottom-4 left-4 right-4 z-40 sm:bottom-6 sm:left-auto sm:right-6 sm:w-[400px]">
         <div className="flex justify-end">
           <button
+            ref={chatToggleRef}
             type="button"
             aria-expanded={isChatOpen}
             aria-controls="codebase-chat-panel"
             onClick={() => setIsChatOpen((current) => !current)}
-            className="min-h-11 rounded-lg bg-[var(--accent)] px-4 text-sm font-semibold text-[var(--accent-contrast)] transition-colors hover:bg-[var(--accent-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)]"
+            className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-[var(--accent)] px-4 text-sm font-semibold text-[var(--accent-contrast)] transition-[background-color,transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:bg-[var(--accent-strong)] hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)] active:translate-y-0"
           >
+            <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4" fill="none">
+              <path d="M3 4.75A2.25 2.25 0 0 1 5.25 2.5h9.5A2.25 2.25 0 0 1 17 4.75v6.5a2.25 2.25 0 0 1-2.25 2.25H8l-4.5 4v-4.35A2.25 2.25 0 0 1 3 11.25z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+              <path d="M6.5 7.25h7M6.5 10h4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
             {isChatOpen ? "Close chat" : "Ask about this code"}
           </button>
         </div>
 
-        {isChatOpen ? (
+        <div
+          className="chat-panel-shell"
+          data-open={isChatOpen}
+          aria-hidden={!isChatOpen}
+          inert={!isChatOpen}
+        >
           <section
             id="codebase-chat-panel"
             aria-label="Codebase chat"
-            className="mt-3 flex max-h-[calc(100dvh-5rem)] min-h-[360px] flex-col gap-4 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[0_16px_40px_-28px_rgba(0,0,0,0.8)]"
+            className="flex max-h-[calc(100dvh-5rem)] min-h-[360px] flex-col gap-4 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[0_16px_40px_-28px_rgba(0,0,0,0.8)]"
           >
-            <header className="flex items-center justify-between border-b border-[var(--border)] pb-3">
-              <h2 className="text-sm font-semibold text-[var(--text-strong)]">Ask CodeLens</h2>
-              <span className="text-xs text-[var(--text-muted)]">
+            <header className="flex items-center justify-between gap-3 border-b border-[var(--border)] pb-3">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--accent-soft)] text-[var(--accent)]">
+                  <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4" fill="none">
+                    <path d="M3 4.75A2.25 2.25 0 0 1 5.25 2.5h9.5A2.25 2.25 0 0 1 17 4.75v6.5a2.25 2.25 0 0 1-2.25 2.25H8l-4.5 4v-4.35A2.25 2.25 0 0 1 3 11.25z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+                    <path d="M6.5 7.25h7M6.5 10h4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  </svg>
+                </span>
+                <div className="min-w-0">
+                  <h2 className="text-sm font-semibold text-[var(--text-strong)]">Ask CodeLens</h2>
+                  {analysisReady ? <p className="truncate font-mono text-[11px] text-[var(--text-muted)]">{repoLabel}</p> : null}
+                </div>
+              </div>
+              <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-[var(--text-muted)]">
+                <span className={`h-1.5 w-1.5 rounded-full ${chatReady ? "bg-[var(--accent)]" : "bg-[var(--text-muted)]"}`} aria-hidden="true" />
                 {chatReady
                   ? "Ready"
                   : ingestMutation.isPending
@@ -706,9 +795,15 @@ export default function SearchPage() {
               </span>
             </header>
 
-            <div className="min-h-0 flex-1 overflow-auto" aria-live="polite">
-              {turns.length === 0 ? (
-                <div className="grid gap-3">
+            <div ref={conversationRef} className="min-h-0 flex-1 overflow-auto" aria-live="polite">
+              {turns.length === 0 && !chatMutation.isPending && !failedQuestion ? (
+                <div className="grid gap-4">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface-strong)] text-[var(--accent)]">
+                    <svg aria-hidden="true" viewBox="0 0 20 20" className="h-5 w-5" fill="none">
+                      <path d="M3 4.75A2.25 2.25 0 0 1 5.25 2.5h9.5A2.25 2.25 0 0 1 17 4.75v6.5a2.25 2.25 0 0 1-2.25 2.25H8l-4.5 4v-4.35A2.25 2.25 0 0 1 3 11.25z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+                      <path d="M6.5 7.25h7M6.5 10h4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                  </div>
                   <p className="text-sm leading-6 text-[var(--text-muted)]">
                     {chatReady
                       ? "Ask about the codebase. Answers use its indexed files as context."
@@ -726,9 +821,12 @@ export default function SearchPage() {
                           type="button"
                           onClick={() => submitQuestion(prompt)}
                           disabled={chatMutation.isPending}
-                          className="min-h-11 rounded-md border border-[var(--border)] px-3 py-2 text-left text-sm text-[var(--text)] transition-colors hover:bg-[var(--surface-strong)] hover:text-[var(--text-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+                          className="group flex min-h-11 items-center justify-between gap-3 rounded-md border border-[var(--border)] px-3 py-2 text-left text-sm text-[var(--text)] transition-[background-color,border-color,color,transform] duration-200 hover:translate-x-0.5 hover:border-[var(--accent)] hover:bg-[var(--surface-strong)] hover:text-[var(--text-strong)] disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {prompt}
+                          <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)] transition-transform group-hover:translate-x-0.5 group-hover:text-[var(--accent)]" fill="none">
+                            <path d="M3 8h10M8.5 3.5 13 8l-4.5 4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
                         </button>
                       ))}
                     </div>
@@ -736,18 +834,62 @@ export default function SearchPage() {
                 </div>
               ) : (
                 <div className="grid gap-5">
-                  {turns.map((turn, index) => (
-                    <div key={`${turn.user}-${index}`} className="grid gap-3">
-                      <div className="ml-auto max-w-[90%] rounded-lg bg-[var(--accent-soft)] px-3 py-2 text-sm text-[var(--text-strong)]">
+                  {turns.map((turn, index) => {
+                    const sourcePaths = getSourcePaths(turn.sources);
+                    return (
+                    <div key={`${turn.user}-${index}`} className="message-enter grid gap-3">
+                      <div className="ml-auto max-w-[90%] rounded-xl rounded-br-sm bg-[var(--accent-soft)] px-3.5 py-2.5 text-sm text-[var(--text-strong)]">
                         <p className="mb-1 text-xs font-medium text-[var(--text-muted)]">You</p>
                         <p className="break-words whitespace-pre-wrap">{turn.user}</p>
                       </div>
-                      <div className="max-w-[92%] rounded-lg border border-[var(--border)] bg-[var(--surface-strong)] px-3 py-2 text-sm leading-6 text-[var(--text-strong)]">
-                        <p className="mb-1 text-xs font-medium text-[var(--text-muted)]">CodeLens</p>
+                      <div className="max-w-[92%] rounded-xl rounded-bl-sm border border-[var(--border)] bg-[var(--surface-strong)] px-3.5 py-2.5 text-sm leading-6 text-[var(--text-strong)]">
+                        <p className="mb-1 flex items-center gap-1.5 text-xs font-medium text-[var(--accent)]">
+                          <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
+                          CodeLens
+                        </p>
                         <p className="break-words whitespace-pre-wrap">{turn.assistant}</p>
+                        {sourcePaths.length > 0 ? (
+                          <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-[var(--border)] pt-2">
+                            <span className="text-[11px] text-[var(--text-muted)]">Sources</span>
+                            {sourcePaths.map((path) => (
+                              <span key={path} className="max-w-full truncate rounded border border-[var(--border)] bg-[var(--bg)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-muted)]" title={path}>
+                                {path}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
+                  {chatMutation.isPending && chatMutation.variables?.question ? (
+                    <div className="message-enter grid gap-3">
+                      <div className="ml-auto max-w-[90%] rounded-xl rounded-br-sm bg-[var(--accent-soft)] px-3.5 py-2.5 text-sm text-[var(--text-strong)]">
+                        <p className="mb-1 text-xs font-medium text-[var(--text-muted)]">You</p>
+                        <p className="break-words whitespace-pre-wrap">{chatMutation.variables.question}</p>
+                      </div>
+                      <TypingIndicator />
+                    </div>
+                  ) : null}
+                  {failedQuestion && chatMutation.isError ? (
+                    <div className="message-enter grid gap-3">
+                      <div className="ml-auto max-w-[90%] rounded-xl rounded-br-sm bg-[var(--accent-soft)] px-3.5 py-2.5 text-sm text-[var(--text-strong)]">
+                        <p className="mb-1 text-xs font-medium text-[var(--text-muted)]">You</p>
+                        <p className="break-words whitespace-pre-wrap">{failedQuestion}</p>
+                      </div>
+                      <div role="alert" className="max-w-[92%] rounded-xl rounded-bl-sm border border-[var(--danger)]/40 bg-[var(--surface-strong)] px-3.5 py-3 text-sm leading-6 text-[var(--text-strong)]">
+                        <p className="mb-1 text-xs font-medium text-[var(--danger)]">CodeLens couldn’t reply</p>
+                        <p>{chatStatus}</p>
+                        <button
+                          type="button"
+                          onClick={() => submitQuestion(failedQuestion)}
+                          className="mt-2 min-h-9 rounded-md border border-[var(--border)] px-3 text-xs font-semibold text-[var(--text-strong)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                        >
+                          Retry message
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               )}
             </div>
@@ -775,24 +917,24 @@ export default function SearchPage() {
                   }
                 }}
                 disabled={!chatReady}
-                className="min-h-20 w-full resize-y rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm leading-6 text-[var(--text-strong)] placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+                className="min-h-20 w-full resize-y rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm leading-6 text-[var(--text-strong)] transition-[border-color,box-shadow] duration-200 placeholder:text-[var(--text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
               />
               <div className="flex items-center justify-between gap-3">
                 <p className="text-xs text-[var(--text-muted)]">Enter to send, Shift+Enter for a new line</p>
                 <button
                   type="submit"
                   disabled={!chatReady || chatMutation.isPending || !question.trim()}
-                  className="min-h-10 rounded-lg bg-[var(--accent)] px-4 text-sm font-semibold text-[var(--accent-contrast)] transition-colors hover:bg-[var(--accent-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[var(--accent)] px-3.5 text-sm font-semibold text-[var(--accent-contrast)] transition-[background-color,transform] duration-200 hover:-translate-y-0.5 hover:bg-[var(--accent-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
                 >
-                  {chatMutation.isPending ? "Sending…" : "Send question"}
+                  {chatMutation.isPending ? "Sending…" : "Send"}
+                  <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none">
+                    <path d="M2.5 8h10M8.5 3.5 13 8l-4.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
                 </button>
               </div>
-              {chatStatus ? (
-                <p role="alert" className="text-sm text-[var(--danger)]">{chatStatus}</p>
-              ) : null}
             </form>
           </section>
-        ) : null}
+        </div>
       </div>
     </section>
   );

@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     hf_embedding_dimension: int = 384
     hf_device: str = "cpu"
 
-    hf_generation_model: str = "google/flan-t5-base"
+    hf_generation_model: str = "Qwen/Qwen2.5-7B-Instruct"
     hf_generation_max_new_tokens: int = 256
     hf_generation_temperature: float = 0.7
 

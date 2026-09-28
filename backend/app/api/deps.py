@@ -21,9 +21,11 @@ def get_retrieval_service(
     return RetrievalService(embedder=embedder, repo=repo)
 
 
-@lru_cache(maxsize=1)
-def get_chat_service() -> ChatService:
-    return ChatService()
+def get_chat_service(
+    embedder: EmbeddingService = Depends(get_embedding_service),
+    repo: PineconeRepository = Depends(get_pinecone_repo),
+) -> ChatService:
+    return ChatService(embedder=embedder, repo=repo)
 
 
 def get_ingestion_service(
